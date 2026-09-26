@@ -244,6 +244,30 @@ test('video cards and details render server availability separately from Archiva
   );
 });
 
+test('single-video detail uses a bare YouTube watch URL', () => {
+  const indexSource = source('index.js');
+  const context = {};
+  vm.runInNewContext(namedFunctionSource(indexSource, 'youtubeWatchUrl'), context);
+  const video = { video_id: 'abc123_-XYZ', playlist_id: 'PLcontext' };
+
+  assert.equal(
+    context.youtubeWatchUrl(video),
+    'https://www.youtube.com/watch?v=abc123_-XYZ&list=PLcontext',
+  );
+  assert.equal(
+    context.youtubeWatchUrl(video, false),
+    'https://www.youtube.com/watch?v=abc123_-XYZ',
+  );
+  assert.match(
+    namedFunctionSource(indexSource, 'videoDetailCardFor'),
+    /youtubeWatchUrl\(video, false\)/,
+  );
+  assert.match(
+    namedFunctionSource(indexSource, 'playlistVideoCardFor'),
+    /youtubeWatchUrl\(video\)/,
+  );
+});
+
 test('playlist cards render observed and temporary YouTube update dates', () => {
   const indexSource = source('index.js');
   const context = {

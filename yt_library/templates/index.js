@@ -2564,9 +2564,11 @@ function playlistYoutubeLastUpdatedHtml(playlist) {
     : '';
 }
 
-function youtubeWatchUrl(video) {
+function youtubeWatchUrl(video, includePlaylist = true) {
   if (!video.video_id) return '';
-  const list = video.playlist_id ? `&list=${encodeURIComponent(video.playlist_id)}` : '';
+  const list = includePlaylist && video.playlist_id
+    ? `&list=${encodeURIComponent(video.playlist_id)}`
+    : '';
   return `https://www.youtube.com/watch?v=${encodeURIComponent(video.video_id)}${list}`;
 }
 
@@ -5773,7 +5775,7 @@ function videoDetailCardFor(video) {
   const article = document.createElement('article');
   article.className = 'card video-detail';
   const titleText = displayVideoTitle(video);
-  const watchUrl = youtubeWatchUrl(video);
+  const watchUrl = youtubeWatchUrl(video, false);
   const channelName = displayVideoChannel(video);
   const channelUrl = displayVideoChannelLocalUrl(video);
   const thumbnail = video.metadata_thumbnail_path

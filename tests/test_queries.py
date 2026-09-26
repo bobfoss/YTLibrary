@@ -3650,6 +3650,7 @@ class NormalizedReadModelTests(unittest.TestCase):
 
         video = video_detail_data(self.conn, "same123")
         self.assertIsNotNone(video)
+        self.assertEqual(video["url"], "https://www.youtube.com/watch?v=same123")
         self.assertEqual(
             video["playlist_links"],
             [

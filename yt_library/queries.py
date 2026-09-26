@@ -1647,7 +1647,9 @@ def video_detail_data(conn: sqlite3.Connection, video_id: str) -> dict[str, Any]
     wrappers = [_omni_result("video", 0, {"video_id": video_id}, matched_description=False)]
     _hydrate_omni_videos(conn, wrappers)
     _add_omni_video_links(conn, wrappers)
-    return wrappers[0]["item"]
+    video = wrappers[0]["item"]
+    video["url"] = youtube_video_url(video_id)
+    return video
 
 
 def projected_video_data(projection: Mapping[str, Any]) -> dict[str, Any]:
