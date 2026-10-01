@@ -72,7 +72,7 @@ facts, transient PIDs, or other runtime-only data here.
   bookkeeping record the check.
 - Supported databases upgrade through ordered migrations. The fresh schema and
   every supported upgrade path must describe the same current model. The
-  schema version at this snapshot is 35.
+  schema version is 36, adding nullable `videos.auto_dubbed` observations.
 
 ## Browser And Search Model
 
@@ -105,6 +105,11 @@ facts, transient PIDs, or other runtime-only data here.
 - Native decorators precede the ordered plugin contribution slot. Unless a
   distinct meaning requires otherwise, new decorators reuse the established
   typography, sizing, spacing, and muted metadata color.
+- Shared video cards and details show **Auto-dubbed** from explicit YouTube
+  watch-page disclosures, primary badges, or player `audioTrack.isAutoDubbed`
+  evidence. This is independent of **Made with AI**, and inconclusive scans
+  preserve the previous observation. Existing videos remain unknown until
+  refreshed; no language-based inference or bulk backfill is applied.
 
 ## Notes And Tags
 

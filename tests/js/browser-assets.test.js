@@ -1328,7 +1328,7 @@ test('video cards decorate Shorts, Live, and Movies while filters also decorate 
     /movieMetadataHtml: movieMetadataHtml\(video\)/,
   );
   assert.match(videoCardSource, /\$\{options\.movieMetadataHtml \|\| ''\}/);
-  assert.match(indexHtml, /\.video-type-decorator, \.ai-disclosure-decorator \{[\s\S]{0,220}font-size: 13px;[\s\S]{0,100}font-weight: 400;/);
+  assert.match(indexHtml, /\.video-type-decorator, \.ai-disclosure-decorator, \.auto-dubbed-decorator \{[\s\S]{0,220}font-size: 13px;[\s\S]{0,100}font-weight: 400;/);
   assert.match(indexHtml, /\.video-type-icon \{[\s\S]{0,180}width: 16px;[\s\S]{0,100}fill: currentColor;/);
   assert.match(indexHtml, /\.youtube-video-icon \{[\s\S]{0,100}width: 19px;[\s\S]{0,80}height: 13px;[\s\S]{0,80}flex-basis: 19px;/);
 });
@@ -1401,13 +1401,23 @@ test('AI disclosure is a core video decorator and recursive search facet', () =>
   assert.match(indexSource, /params\.set\('ai_disclosure', metaFilterParamValue\(aiDisclosures\)\)/);
   assert.match(decoratorSource, /Number\(video\?\.ai_disclosure\) !== 1/);
   assert.match(decoratorSource, /Made with AI/);
-  assert.match(indexHtml, /\.video-type-decorator, \.ai-disclosure-decorator \{[\s\S]{0,260}font-size: 13px;[\s\S]{0,100}font-weight: 400;/);
-  assert.match(indexHtml, /\.ai-disclosure-decorator \{ color: var\(--muted\); \}/);
-  assert.match(videoCardSource, /options\.typeDecoratorHtml[\s\S]{0,100}options\.aiDisclosureDecoratorHtml[\s\S]{0,140}data-entity-card-slot="primaryMetadata"/);
+  assert.match(indexHtml, /\.video-type-decorator, \.ai-disclosure-decorator, \.auto-dubbed-decorator \{[\s\S]{0,260}font-size: 13px;[\s\S]{0,100}font-weight: 400;/);
+  assert.match(indexHtml, /\.ai-disclosure-decorator, \.auto-dubbed-decorator \{ color: var\(--muted\); \}/);
+  assert.match(videoCardSource, /options\.typeDecoratorHtml[\s\S]{0,100}options\.aiDisclosureDecoratorHtml[\s\S]{0,240}data-entity-card-slot="primaryMetadata"/);
   assert.match(
     namedFunctionSource(indexSource, 'videoDetailCardFor'),
-    /videoTypeDecoratorHtml\(video\)[\s\S]{0,100}aiDisclosureDecoratorHtml\(video\)[\s\S]{0,140}data-entity-card-slot="primaryMetadata"/,
+    /videoTypeDecoratorHtml\(video\)[\s\S]{0,100}aiDisclosureDecoratorHtml\(video\)[\s\S]{0,240}data-entity-card-slot="primaryMetadata"/,
   );
+});
+
+test('auto-dubbed decorator requires an observed positive', () => {
+  const context = {};
+  vm.runInNewContext(namedFunctionSource(source('index.js'), 'autoDubbedDecoratorHtml'), context);
+  for (const auto_dubbed of [undefined, null, 0, false]) {
+    assert.equal(context.autoDubbedDecoratorHtml({ auto_dubbed }), '');
+  }
+  assert.match(context.autoDubbedDecoratorHtml({ auto_dubbed: 1 }), /Auto-dubbed/);
+  assert.match(context.autoDubbedDecoratorHtml({ auto_dubbed: true }), /Auto-dubbed/);
 });
 
 test('sidebar keeps facet trees separate from category navigation', () => {

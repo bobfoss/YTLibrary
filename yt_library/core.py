@@ -725,6 +725,7 @@ def upsert_video(
     content_check_reason: str | None = None,
     ai_disclosure: bool | int | None = None,
     ai_disclosure_text: str | None = None,
+    auto_dubbed: bool | int | None = None,
     thumbnail_url: str = "",
     thumbnail_path: str = "",
     reaction: str = "",
@@ -872,6 +873,10 @@ def upsert_video(
             int(bool(ai_disclosure)) if ai_disclosure is not None else None,
         ),
         current_ai_disclosure_text(),
+        current_observation(
+            "auto_dubbed",
+            int(bool(auto_dubbed)) if auto_dubbed is not None else None,
+        ),
         current("thumbnail_url", thumbnail_url),
         current("thumbnail_path", thumbnail_path),
         current("reaction", reaction),
@@ -894,7 +899,7 @@ def upsert_video(
               broadcast_ended_at=?, broadcast_status_checked_at=?,
               movie_rating=?, movie_release_date=?, movie_offer=?,
               max_video_height=?, spatial_format=?, stereo_layout=?, dynamic_range=?, license=?, location_name=?,
-              content_check_required=?, content_check_reason=?, ai_disclosure=?, ai_disclosure_text=?,
+              content_check_required=?, content_check_reason=?, ai_disclosure=?, ai_disclosure_text=?, auto_dubbed=?,
               thumbnail_url=?, thumbnail_path=?, reaction=?, is_playable=?,
               availability=?, metadata_source=?,
               fetch_status=?, fetch_error=?, fetched_at=?, last_seen_available_at=?,
@@ -912,11 +917,11 @@ def upsert_video(
               broadcast_ended_at, broadcast_status_checked_at,
               movie_rating, movie_release_date, movie_offer,
               max_video_height, spatial_format, stereo_layout, dynamic_range, license, location_name,
-              content_check_required, content_check_reason, ai_disclosure, ai_disclosure_text,
+              content_check_required, content_check_reason, ai_disclosure, ai_disclosure_text, auto_dubbed,
               thumbnail_url, thumbnail_path, reaction, is_playable, availability, metadata_source,
               fetch_status, fetch_error, fetched_at, last_seen_available_at,
               last_checked_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (video_id, *values),
         )
@@ -4176,6 +4181,42 @@ def youtube_ai_disclosure_metadata(
     }
 
 
+def youtube_auto_dubbed_metadata(
+    player: Mapping[str, Any],
+    initial_data: Mapping[str, Any],
+) -> dict[str, bool | None]:
+    if (
+        str(player.get("playabilityStatus", {}).get("status") or "").upper() != "OK"
+        or not player.get("videoDetails")
+    ):
+        return {"auto_dubbed": None}
+    for node in walk(player.get("streamingData", {})):
+        if isinstance(node, dict):
+            track = node.get("audioTrack")
+            if isinstance(track, dict) and track.get("isAutoDubbed") is True:
+                return {"auto_dubbed": True}
+    for node in walk(initial_data):
+        if not isinstance(node, dict):
+            continue
+        disclosure = node.get("howThisWasMadeSectionViewModel")
+        if isinstance(disclosure, dict):
+            header = text_from_runs(disclosure.get("bodyHeader") or {}).strip().casefold()
+            body = text_from_runs(disclosure.get("bodyText") or {}).casefold()
+            if header == "auto-dubbed" or (
+                "audio tracks for some languages were automatically generated" in body
+            ):
+                return {"auto_dubbed": True}
+        primary = node.get("videoPrimaryInfoRenderer")
+        if isinstance(primary, dict):
+            for badge in primary.get("badges", []) or []:
+                label = text_from_runs(
+                    badge.get("metadataBadgeRenderer", {}).get("label")
+                ).strip().casefold()
+                if label == "auto-dubbed":
+                    return {"auto_dubbed": True}
+    return {"auto_dubbed": False if initial_data else None}
+
+
 def opener_cookie_jar(
     opener: urllib.request.OpenerDirector,
 ) -> http.cookiejar.CookieJar | None:
@@ -4289,6 +4330,7 @@ def extract_watch_metadata(
         **feature_metadata,
         **content_check_metadata,
         **ai_disclosure_metadata,
+        **youtube_auto_dubbed_metadata(player, initial_data),
         "thumbnail_url": thumbnail_url,
         "channel_thumbnail_url": channel_thumbnail_url,
         "reaction": reaction,
@@ -4439,6 +4481,7 @@ def store_video_metadata(
         content_check_reason=metadata.get("content_check_reason"),
         ai_disclosure=metadata.get("ai_disclosure"),
         ai_disclosure_text=metadata.get("ai_disclosure_text"),
+        auto_dubbed=metadata.get("auto_dubbed"),
         thumbnail_url=metadata.get("thumbnail_url", ""),
         thumbnail_path=metadata.get("thumbnail_path", ""),
         reaction=metadata.get("reaction", ""),

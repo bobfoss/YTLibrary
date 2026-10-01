@@ -14,6 +14,7 @@ YT Library Manager is a local Python web app for browsing, enriching, and reconc
 - Collect subscription, owned-playlist creation, and playlist-item-added timestamps through the YouTube Data API.
 - Reconcile date-only live YouTube history observations with precise Takeout watch timestamps.
 - Cache video thumbnails and creator channel avatars locally.
+- Show YouTube's Auto-dubbed audio disclosure on video cards and details.
 - Capture YouTube `LIKE`, `DISLIKE`, and `INDIFFERENT` reaction state during metadata fetches and expose a derived Liked videos view.
 - Monitor and control the persistent queue for playlist scans, metadata fetches, history verification, and unavailable-video recovery from the admin page.
 

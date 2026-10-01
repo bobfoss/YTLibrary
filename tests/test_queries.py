@@ -225,6 +225,7 @@ class NormalizedReadModelTests(unittest.TestCase):
             content_check_reason="Sensitive subject matter",
             ai_disclosure=True,
             ai_disclosure_text="Sounds or visuals were altered or fully generated.",
+            auto_dubbed=True,
             source="metadata",
         )
         self.conn.execute(
@@ -253,6 +254,7 @@ class NormalizedReadModelTests(unittest.TestCase):
             self.assertEqual(item["content_check_required"], 1)
             self.assertEqual(item["content_check_reason"], "Sensitive subject matter")
             self.assertEqual(item["ai_disclosure"], 1)
+            self.assertEqual(item["auto_dubbed"], 1)
             self.assertEqual(
                 item["ai_disclosure_text"],
                 "Sounds or visuals were altered or fully generated.",

@@ -1312,7 +1312,15 @@ YouTube's `howThisWasMadeSectionViewModel` is a container for distinct source
 disclosures rather than proof of one category. Only its explicit **Made with
 AI** header or canonical altered/generated sounds-or-visuals text sets
 `videos.ai_disclosure`; **Auto-dubbed** remains an observed absence for that
-facet instead of being conflated with creator-content disclosure.
+facet instead of being conflated with creator-content disclosure. Independent
+`videos.auto_dubbed` evidence comes from explicit `audioTrack.isAutoDubbed`, the
+watch-page primary **Auto-dubbed** badge, or the corresponding **How this was
+made** disclosure. It uses nullable boolean observations: unknown stays `NULL`,
+a successful watch-page scan can observe absence, and failed scans preserve
+prior values. Multiple audio tracks, a non-English title, captions, and generic
+AI text do not establish auto dubbing. The shared native card decorator shows
+**Auto-dubbed** when present, meaning generated tracks are available rather than
+claiming which track the viewer is currently hearing.
 
 Runtime settings, including the display timezone, request launch intervals, concurrency limits, cookie paths, and bind address, live in `yt_library.config.json`, not in SQLite. An empty display timezone is treated as UTC by the server until the browser detects an IANA timezone and saves it through the settings endpoint.
 

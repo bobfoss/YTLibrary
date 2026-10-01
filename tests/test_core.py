@@ -3708,6 +3708,77 @@ class CoreHelperTests(unittest.TestCase):
 
         self.assertFalse(metadata["ai_disclosure"])
         self.assertEqual(metadata["ai_disclosure_text"], "")
+        self.assertTrue(metadata["auto_dubbed"])
+
+    def test_auto_dubbing_requires_explicit_video_evidence(self) -> None:
+        player = {
+            "playabilityStatus": {"status": "OK"},
+            "videoDetails": {"title": "Japanese news"},
+        }
+        for initial in (
+            {"videoPrimaryInfoRenderer": {"badges": [
+                {"metadataBadgeRenderer": {"label": "Auto-dubbed"}}
+            ]}},
+            {"howThisWasMadeSectionViewModel": {"bodyText": {
+                "content": "Audio tracks for some languages were automatically generated."
+            }}},
+        ):
+            with self.subTest(initial=initial):
+                self.assertEqual(
+                    core.youtube_auto_dubbed_metadata(player, initial),
+                    {"auto_dubbed": True},
+                )
+        dubbed_player = {**player, "streamingData": {"adaptiveFormats": [
+            {"audioTrack": {"id": "en-US.10", "isAutoDubbed": True}}
+        ]}}
+        self.assertEqual(
+            core.youtube_auto_dubbed_metadata(dubbed_player, {}),
+            {"auto_dubbed": True},
+        )
+        manual_player = {**player, "streamingData": {"adaptiveFormats": [
+            {"audioTrack": {"id": "en.1", "displayName": "English"}},
+            {"audioTrack": {"id": "ja.1", "displayName": "Japanese original"}},
+        ]}}
+        unrelated = {
+            "recommendation": {"metadataBadgeRenderer": {"label": "Auto-dubbed"}},
+            "howThisWasMadeSectionViewModel": {
+                "bodyHeader": {"content": "Made with AI"},
+            },
+        }
+        self.assertEqual(
+            core.youtube_auto_dubbed_metadata(manual_player, unrelated),
+            {"auto_dubbed": False},
+        )
+        self.assertEqual(
+            core.youtube_auto_dubbed_metadata(player, {}), {"auto_dubbed": None}
+        )
+        self.assertEqual(
+            core.youtube_auto_dubbed_metadata(
+                {"playabilityStatus": {"status": "ERROR"}}, unrelated
+            ),
+            {"auto_dubbed": None},
+        )
+
+    def test_auto_dubbing_observations_survive_inconclusive_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = migrated_connection(Path(tmp) / "library.sqlite3")
+            try:
+                for observation, expected in ((True, 1), (None, 1), (False, 0)):
+                    with conn:
+                        core.store_video_metadata(
+                            conn,
+                            {"video_id": "autodub12345", "auto_dubbed": observation},
+                            "ok" if observation is not None else "no_metadata",
+                        )
+                    self.assertEqual(
+                        conn.execute(
+                            "SELECT auto_dubbed FROM videos WHERE video_id = ?",
+                            ("autodub12345",),
+                        ).fetchone()[0],
+                        expected,
+                    )
+            finally:
+                conn.close()
 
     def test_ai_disclosure_checks_all_how_this_was_made_sections(self) -> None:
         metadata = core.youtube_ai_disclosure_metadata(

@@ -4440,6 +4440,18 @@ function aiDisclosureDecoratorHtml(video) {
   `;
 }
 
+function autoDubbedDecoratorHtml(video) {
+  if (Number(video?.auto_dubbed) !== 1) return '';
+  return `
+    <span class="auto-dubbed-decorator" title="YouTube provides automatically generated audio tracks for this video">
+      <svg class="auto-dubbed-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M11 5 6 9H3v6h3l5 4V5Z"></path>
+        <path d="M15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14"></path>
+      </svg><span>Auto-dubbed</span>
+    </span>
+  `;
+}
+
 function annotationCardOptions(entity) {
   const note = String(entity?.note || '').trim();
   const tags = Array.isArray(entity?.tags)
@@ -5798,6 +5810,7 @@ function videoDetailCardFor(video) {
           ${videoAvailabilityHtml(video)}
           ${videoTypeDecoratorHtml(video)}
           ${aiDisclosureDecoratorHtml(video)}
+          ${autoDubbedDecoratorHtml(video)}
           <span class="entity-card-slot entity-card-primary-metadata" data-entity-card-slot="primaryMetadata"></span>
         </div>
         ${movieMetadataHtml(video)}
@@ -6993,6 +7006,7 @@ function playlistVideoCardFor(video, options = {}) {
     availabilityHtml: videoAvailabilityHtml(video),
     typeDecoratorHtml: videoTypeDecoratorHtml(video),
     aiDisclosureDecoratorHtml: aiDisclosureDecoratorHtml(video),
+    autoDubbedDecoratorHtml: autoDubbedDecoratorHtml(video),
     movieMetadataHtml: movieMetadataHtml(video),
     featureMetadataHtml: videoFeatureMetadataHtml(video),
     contentWarningHtml: contentWarningHtml(video),

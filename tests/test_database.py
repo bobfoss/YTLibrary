@@ -65,6 +65,7 @@ class DatabaseModuleTests(unittest.TestCase):
 
         self.assertEqual(schema_version, database.SCHEMA_VERSION)
         self.assertIn("uploader_category", video_columns)
+        self.assertIn("auto_dubbed", video_columns)
         self.assertTrue(
             {"movie_rating", "movie_release_date", "movie_offer"}.issubset(
                 video_columns
@@ -800,6 +801,37 @@ class DatabaseModuleTests(unittest.TestCase):
             "2026-08-20T00:00:00Z",
         )
         self.assertEqual(rows["explicit-negative"]["is_playable"], 0)
+
+    def test_database_module_migrates_auto_dubbing_from_version_35(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "library.sqlite3"
+            database.migrate_database(db_path)
+            conn = database.connect(db_path)
+            try:
+                with conn:
+                    conn.execute(
+                        "INSERT INTO videos(video_id, title, ai_disclosure) "
+                        "VALUES ('dubkeep1234', 'Keep metadata', 0)"
+                    )
+                    conn.execute("ALTER TABLE videos DROP COLUMN auto_dubbed")
+                    conn.execute("DELETE FROM schema_migrations WHERE version >= 36")
+            finally:
+                conn.close()
+            database.migrate_database(db_path)
+            conn = database.connect(db_path)
+            try:
+                retained = conn.execute(
+                    "SELECT title, ai_disclosure, auto_dubbed FROM videos"
+                ).fetchone()
+                self.assertEqual(tuple(retained), ("Keep metadata", 0, None))
+                self.assertEqual(
+                    conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0],
+                    database.SCHEMA_VERSION,
+                )
+                with self.assertRaises(sqlite3.IntegrityError):
+                    conn.execute("UPDATE videos SET auto_dubbed = 2")
+            finally:
+                conn.close()
 
     def test_database_module_migrates_ai_disclosure_metadata_from_version_32(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

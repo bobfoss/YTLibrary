@@ -269,7 +269,7 @@
       ${options.position ? `<div class="position">#${escapeHtml(options.position)}</div>` : ''}
       ${titleHtml(options)}
       ${options.availabilityHtml
-        ? `<div class="video-availability-row">${options.availabilityHtml}${options.typeDecoratorHtml || ''}${options.aiDisclosureDecoratorHtml || ''}${options.compactAvailabilityHtml || ''}<span class="entity-card-slot entity-card-primary-metadata" data-entity-card-slot="primaryMetadata"></span></div>`
+        ? `<div class="video-availability-row">${options.availabilityHtml}${options.typeDecoratorHtml || ''}${options.aiDisclosureDecoratorHtml || ''}${options.autoDubbedDecoratorHtml || ''}${options.compactAvailabilityHtml || ''}<span class="entity-card-slot entity-card-primary-metadata" data-entity-card-slot="primaryMetadata"></span></div>`
         : ''}
       ${options.movieMetadataHtml || ''}
       ${options.featureMetadataHtml || ''}
