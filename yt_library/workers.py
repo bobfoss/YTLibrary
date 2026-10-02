@@ -3406,7 +3406,7 @@ class WorkerQueueDispatcher(_ThreadWorkerLifecycle):
                 has_active = bool(
                     metadata_queue_ids or clip_queue_ids or placeholder_queue_ids or plugin_queue_ids
                 )
-                if not proxy_blocked and not has_active and not youtube_blocked:
+                if not proxy_blocked and not youtube_blocked:
                     eligible_worker_types.extend(("account", "playlist", "history"))
                 if not eligible_worker_types:
                     if has_active:
@@ -3430,12 +3430,16 @@ class WorkerQueueDispatcher(_ThreadWorkerLifecycle):
                         self._stop.wait(0.05)
                         continue
                     return
+                worker_type = row.get("worker_type") or ""
+                if has_active and worker_type in {"account", "playlist", "history"}:
+                    # Preserve the selected job's priority while active work drains.
+                    self._stop.wait(0.05)
+                    continue
                 if now < next_dispatch:
                     self._stop.wait(
                         max(0.01, min(0.1, next_dispatch - time.monotonic()))
                     )
                     continue
-                worker_type = row.get("worker_type") or ""
                 queue_id = int(row.get("queue_id") or 0)
                 launched = False
                 launched_at: float | None = None

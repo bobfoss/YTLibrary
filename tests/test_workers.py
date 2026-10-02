@@ -420,6 +420,119 @@ class WorkerQueueTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_dispatcher_drains_active_plugins_for_higher_priority_exclusive_work(self) -> None:
+        for exclusive_priority in (-3, 3):
+            with self.subTest(exclusive_priority=exclusive_priority), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                db_path = root / "library.sqlite3"
+                conn = migrated_connection(db_path)
+                try:
+                    with conn:
+                        conn.executemany(
+                            """
+                            INSERT INTO worker_queue(
+                              subject_key, worker_type, task_type, source_key,
+                              priority, created_at, updated_at
+                            ) VALUES (?, 'plugin', 'fetch', 'sample', ?, ?, ?)
+                            """,
+                            [(f"plugin-{index}", index, core.utc_now(), core.utc_now())
+                             for index in range(3)],
+                        )
+                finally:
+                    conn.close()
+
+                events: list[str] = []
+                active: set[str] = set()
+
+                def consume(worker_type: str) -> dict[str, bool]:
+                    self.assertFalse(active, "Exclusive work overlapped an active job")
+                    events.append(worker_type)
+                    conn = core.connect(db_path)
+                    try:
+                        with conn:
+                            conn.execute("DELETE FROM worker_queue WHERE worker_type = ?", (worker_type,))
+                    finally:
+                        conn.close()
+                    return {"started": True, "completed": True}
+
+                class FakePluginWorker:
+                    def start(self, _db_path: Path, _manager: object, row: dict, **_kwargs: object) -> dict[str, bool]:
+                        self.queue_id = row["queue_id"]
+                        self.name = row["subject_key"]
+                        self.polls = 0
+                        active.add(self.name)
+                        events.append(f"start {self.name}")
+                        if self.name == "plugin-1":
+                            conn = core.connect(db_path)
+                            try:
+                                with conn:
+                                    core.enqueue_account_sync_task(conn, priority=exclusive_priority)
+                                    core.enqueue_playlist_scan_item(
+                                        conn, "PLexclusive", priority=exclusive_priority + 1,
+                                    )
+                                    core.enqueue_history_task(conn, "recent", priority=exclusive_priority + 2)
+                            finally:
+                                conn.close()
+                        return {"started": True}
+
+                    def is_alive(self) -> bool:
+                        self.polls += 1
+                        if self.polls < 2:
+                            return True
+                        if self.name in active:
+                            active.remove(self.name)
+                            events.append(f"finish {self.name}")
+                            conn = core.connect(db_path)
+                            try:
+                                with conn:
+                                    core.remove_worker_queue_entry(conn, self.queue_id)
+                            finally:
+                                conn.close()
+                        return False
+
+                    def stop(self) -> None:
+                        raise AssertionError("Active jobs must finish naturally")
+
+                process = {"service": "youtube", "maxInFlight": 2}
+                manager = Mock()
+                manager.process_definitions.return_value = {("sample", "fetch"): process}
+                manager.process_definition.return_value = process
+                dispatcher = WorkerQueueDispatcher()
+                dispatcher._plugin_manager = manager
+                dispatcher.update_dispatch_settings("throttle", 0, 2, 1)
+                with (
+                    patch("yt_library.workers.PluginTaskWorker", FakePluginWorker),
+                    patch("yt_library.workers.run_optional_account_sync", side_effect=lambda *_args: consume("account")),
+                    patch.object(workers.PLAYLIST_SCAN_WORKER, "start", side_effect=lambda *_args, **_kwargs: consume("playlist")),
+                    patch.object(workers.PLAYLIST_SCAN_WORKER, "is_running", return_value=False),
+                    patch.object(workers.PLAYLIST_SCAN_WORKER, "proxy_block_reason", return_value=""),
+                    patch.object(workers.LIVE_HISTORY_WORKER, "start", side_effect=lambda *_args, **_kwargs: consume("history")),
+                    patch.object(workers.LIVE_HISTORY_WORKER, "is_running", return_value=False),
+                    patch.object(workers.LIVE_HISTORY_WORKER, "proxy_block_reason", return_value=""),
+                ):
+                    dispatcher._run(
+                        db_path, root / "cookies.txt", root / "thumbs", "UTC",
+                        root / "archive-cookies.txt", root / "archive-thumbs",
+                    )
+
+                launches = [event for event in events if not event.startswith("finish ")]
+                if exclusive_priority < 0:
+                    self.assertEqual(launches, [
+                        "start plugin-0", "start plugin-1", "account", "playlist",
+                        "history", "start plugin-2",
+                    ])
+                    self.assertLess(events.index("finish plugin-1"), events.index("account"))
+                else:
+                    self.assertEqual(launches, [
+                        "start plugin-0", "start plugin-1", "start plugin-2",
+                        "account", "playlist", "history",
+                    ])
+                conn = core.connect(db_path)
+                try:
+                    self.assertEqual(core.worker_queue_count(conn), 0)
+                finally:
+                    conn.close()
+
     def test_dispatcher_settings_changes_apply_during_active_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "library.sqlite3"

@@ -193,7 +193,9 @@ facts, transient PIDs, or other runtime-only data here.
   monotonic clock between periodic status synchronizations.
 - The persistent dispatcher rereads SQLite before every launch. Priority
   changes and newly queued jobs can affect the remaining run without rebuilding
-  an in-memory batch.
+  an in-memory batch. When account, playlist, or history work reaches the front
+  of the eligible queue, active workers finish before it starts; lower-priority
+  jobs do not refill slots and indefinitely delay this exclusive work.
 - Update, Initialize, and Rebuild share the declarative queue planner. Update
   promotes its complete selected batch ahead of older backlog while retaining
   internal ordering. Rebuild replaces only regenerable core plan rows and
