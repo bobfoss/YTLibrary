@@ -3040,6 +3040,7 @@ def serve(args: argparse.Namespace) -> None:
         args.config_data,
         db_path=db_path,
         youtube_cookie_file=Path(args.cookies),
+        my_activity_cookie_file=config_path(args.config_data, "my_activity_cookies"),
         proxy_url=configured_proxy(args.config_data),
     )
     config_store = ConfigStore(args.config_data)

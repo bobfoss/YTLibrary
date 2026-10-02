@@ -37,6 +37,10 @@ PLUGIN_HOST_FEATURES = frozenset(
         "plugin_json_mutations_v1",
         "youtube_watch_session_v1",
         "youtube_ytdlp_v1",
+        "youtube_next_session_v1",
+        "my_activity_session_v1",
+        "worker_followup_v1",
+        "video_discovery_v1",
     }
 )
 PLUGIN_ENTRY_POINT_GROUP = "yt_library.plugins"
@@ -120,7 +124,7 @@ class PluginYoutubeSession:
     ) -> dict[str, Any]:
         """Submit one bounded request with host-owned authentication and no retries."""
 
-        if api_path != "get_panel":
+        if api_path not in {"get_panel", "next"}:
             raise ValueError(f"Unsupported plugin YouTube API path: {api_path}")
         if not isinstance(payload, Mapping):
             raise TypeError("Plugin YouTube request payload must be an object")
@@ -154,6 +158,8 @@ class PluginYoutubeSession:
         )
         if response_size > PLUGIN_YOUTUBE_RESPONSE_BYTES:
             raise RuntimeError("Plugin YouTube response exceeds 16 MiB")
+        if response.get("responseContext", {}).get("mainAppWebResponseContext", {}).get("loggedOut") is True:
+            raise RuntimeError("YouTube session is signed out; refresh the cookie export")
         return response
 
 
@@ -161,6 +167,7 @@ def _open_plugin_youtube_session(
     cookie_file: Path,
     proxy_url: str,
     video_id: str,
+    comment_id: str = "",
 ) -> PluginYoutubeSession:
     normalized_video_id = str(video_id or "").strip()
     if not YOUTUBE_VIDEO_ID.fullmatch(normalized_video_id):
@@ -186,6 +193,10 @@ def _open_plugin_youtube_session(
         *socks5_proxy_handlers(proxy_url),
     )
     referer = "https://www.youtube.com/watch?v=" + normalized_video_id
+    if comment_id:
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,250}", comment_id):
+            raise ValueError("Invalid highlighted item ID")
+        referer += "&lc=" + urllib.parse.quote(comment_id)
     page_body, _content_type = request_bytes(opener, referer, timeout=30)
     if len(page_body) > PLUGIN_YOUTUBE_PAGE_BYTES:
         raise RuntimeError("YouTube watch page exceeds 16 MiB")
@@ -228,6 +239,7 @@ class PluginContext:
         Callable[[tuple[str, ...]], Iterable[dict[str, Any]]] | None
     ) = None
     _youtube_session_factory: Callable[[str], PluginYoutubeSession] | None = None
+    _my_activity_session_factory: Callable[[], Any] | None = None
 
     def resolve_path(self, value: str | Path) -> Path:
         path = Path(value)
@@ -259,12 +271,19 @@ class PluginContext:
             return ()
         return tuple(self._library_video_lookup(normalized))
 
-    def youtube_video_session(self, video_id: str) -> PluginYoutubeSession:
+    def youtube_video_session(self, video_id: str, *, comment_id: str = "") -> PluginYoutubeSession:
         """Open a bounded authenticated session for one YouTube watch page."""
 
         if not callable(self._youtube_session_factory):
             raise RuntimeError("YouTube video sessions are unavailable")
+        if comment_id:
+            return self._youtube_session_factory(video_id, comment_id=comment_id)
         return self._youtube_session_factory(video_id)
+
+    def my_activity_session(self) -> Any:
+        if not callable(self._my_activity_session_factory):
+            raise RuntimeError("My Activity sessions are unavailable")
+        return self._my_activity_session_factory()
 
 
 def _library_videos_by_id(
@@ -391,6 +410,50 @@ class PluginWorkerRuntime:
         self._service = service
         self._cookie_file = Path(cookie_file) if cookie_file is not None else None
         self._proxy_url = str(proxy_url or "")
+        self._manager: PluginManager | None = None
+
+    def enqueue_process(self, worker_id: str, params: Mapping[str, Any]) -> dict[str, Any]:
+        """Plan follow-up work belonging to this same plugin."""
+        if self._manager is None:
+            raise RuntimeError("Plugin follow-up planning is unavailable")
+        conn = connect(self._db_path)
+        try:
+            with conn:
+                return self._manager.enqueue_process(
+                    conn, self.plugin_id, worker_id, params, manual=False,
+                )
+        finally:
+            conn.close()
+
+    def discover_videos(self, videos: Iterable[Mapping[str, Any]]) -> int:
+        """Add explicit discovered identities and queue metadata only for new videos."""
+        from .core import enqueue_metadata_item, upsert_video
+
+        rows = list(videos)
+        if len(rows) > 1000:
+            raise ValueError("At most 1000 videos may be discovered per call")
+        for row in rows:
+            if not isinstance(row, Mapping) or not YOUTUBE_VIDEO_ID.fullmatch(str(row.get("video_id") or "")):
+                raise ValueError("Discovered videos require valid YouTube IDs")
+        conn = connect(self._db_path)
+        added = 0
+        try:
+            with conn:
+                for row in rows:
+                    video_id = str(row["video_id"])
+                    if conn.execute("SELECT 1 FROM videos WHERE video_id=?", (video_id,)).fetchone():
+                        continue
+                    title = str(row.get("title") or "")[:2000]
+                    upsert_video(conn, video_id, title=title, source="provided")
+                    enqueue_metadata_item(
+                        conn, video_id=video_id, current_title=title,
+                        metadata_source="provided", source_key=f"plugin:{self.plugin_id}",
+                        manual=False,
+                    )
+                    added += 1
+        finally:
+            conn.close()
+        return added
 
     def stop_requested(self) -> bool:
         return self._stop_event.is_set()
@@ -1175,9 +1238,16 @@ class PluginManager:
         youtube_cookie_file: Path | None = None,
         proxy_url: str = "",
         youtube_session_factory: Callable[[str], PluginYoutubeSession] | None = None,
+        my_activity_cookie_file: Path | None = None,
     ) -> None:
         self._config = config
         self._db_path = Path(db_path) if db_path is not None else None
+        from .plugin_transport import PluginMyActivitySession
+
+        self._my_activity_session_factory = (
+            partial(PluginMyActivitySession, Path(my_activity_cookie_file), str(proxy_url or ""))
+            if my_activity_cookie_file is not None else None
+        )
         self._youtube_session_factory = youtube_session_factory
         if self._youtube_session_factory is None and youtube_cookie_file is not None:
             self._youtube_session_factory = partial(
@@ -1288,6 +1358,7 @@ class PluginManager:
                     else None
                 ),
                 _youtube_session_factory=self._youtube_session_factory,
+                _my_activity_session_factory=self._my_activity_session_factory,
             )
             instance.start(context)
             record.instance = instance
@@ -1635,6 +1706,7 @@ class PluginManager:
         if self.process_definition(plugin_id, worker_id) is None:
             raise LookupError(f"Unknown plugin worker process: {plugin_id}/{worker_id}")
         try:
+            runtime._manager = self
             return _normalize_worker_result(
                 record.instance.run_worker(worker_id, dict(task), runtime)
             )

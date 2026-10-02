@@ -147,6 +147,31 @@ function contributionLabels(slot) {
   ));
 }
 
+test('standalone result plugins honor their Search in field without hiding empty-query browsing', async () => {
+  const start = indexSource.indexOf('async function fetchBrowserPluginSearches(');
+  const end = indexSource.indexOf('\nasync function ', start + 1);
+  let enabled = false;
+  let calls = 0;
+  const context = {
+    browserResultSearchPlugins: () => [{id: 'sample', search: {
+      fetchEmptyQuery: true,
+      fetch: async () => { calls += 1; return {total: 1, results: [{id: 'one'}]}; },
+    }}],
+    searchKindEnabled: () => true,
+    browserSearchFieldDefinition: () => ({key: 'sample'}),
+    browserPluginSearchFieldEnabled: () => enabled,
+    browserPluginHost: () => ({}),
+  };
+  vm.runInNewContext(indexSource.slice(start, end), context);
+  assert.equal((await context.fetchBrowserPluginSearches('needle', 20, 0)).total, 0);
+  assert.equal(calls, 0);
+  enabled = true;
+  assert.equal((await context.fetchBrowserPluginSearches('needle', 20, 0)).total, 1);
+  enabled = false;
+  assert.equal((await context.fetchBrowserPluginSearches('', 20, 0)).total, 1);
+  assert.equal(calls, 2);
+});
+
 test('browser plugins are loaded through a generic registration contract', () => {
   assert.match(indexSource, /window\.YTLibraryBrowserPlugins = Object\.freeze/);
   assert.match(indexSource, /register: registerBrowserPlugin/);

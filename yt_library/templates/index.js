@@ -4663,6 +4663,11 @@ function browserPluginHost(pluginId) {
     supports: capability => browserPluginSupports(pluginId, capability),
     libraryChannels,
     libraryVideos,
+    refreshSearch: async () => {
+      omniSearchCache.clear();
+      currentPage = 1;
+      return render();
+    },
     requestJson: async (path, params = {}) => {
       const response = await fetch(
         browserPluginRequestUrl(pluginId, path, params),
@@ -4694,6 +4699,7 @@ function browserPluginHost(pluginId) {
       return payload;
     },
     ui: {
+      formatTime: value => window.YTLibraryTime.format(value),
       createSearchVideoCard: searchVideoCardFor,
       createVideoCard: videoCardFor,
       escapeHtml,
@@ -4732,7 +4738,8 @@ async function fetchBrowserPluginSearches(query, limit, offset) {
   let localOffset = offset;
   for (const plugin of browserResultSearchPlugins().filter(item => searchKindEnabled(item.id))) {
     let payload = { total: 0, totalIsExact: true, results: [] };
-    if (query || plugin.search.fetchEmptyQuery === true) {
+    if ((query || plugin.search.fetchEmptyQuery === true)
+      && (!query || !browserSearchFieldDefinition(plugin) || browserPluginSearchFieldEnabled(plugin))) {
       try {
         payload = await plugin.search.fetch(
           { query, limit: Math.max(1, remaining), offset: localOffset },

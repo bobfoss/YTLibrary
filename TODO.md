@@ -266,9 +266,9 @@ The left-navigation library lists are named omni-search presets. Search returns 
 - Add an optional Download plugin for preserving downloaded videos and clips
   through the versioned plugin host, with independent video and clip tracking
   and no automatic media eviction.
-- Add a separate optional Comments plugin for collecting and browsing YouTube
-  comments without introducing comments-specific dependencies into the core
-  application.
+- YT Comments is implemented as a separate optional plugin. Its My Activity
+  discovery, participating-thread capture, search cards, and video decorator
+  remain plugin-owned; core supplies bounded transport and queue services.
 - Beginning with the 1.0 release, preserve or redirect existing browser URLs when route or parameter formatting changes. Pre-1.0 URLs do not require compatibility handling.
 
 ## Deferred Decisions

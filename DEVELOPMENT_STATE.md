@@ -149,6 +149,11 @@ facts, transient PIDs, or other runtime-only data here.
 - Plugins are discovered through `yt_library.plugins` entry points but load
   only when explicitly enabled. Missing, disabled, incompatible, or failing
   plugins must not prevent core startup or rendering.
+- YT Comments uses additive host services for authenticated My Activity reads,
+  highlighted YouTube watch sessions and `next` continuations, same-plugin
+  follow-up planning, and explicit video discovery. Discovery queues metadata
+  only for newly added IDs and never creates watch occurrences. The plugin owns
+  account participation, thread storage, its schema, search, and presentation.
 - Plugin search can enrich canonical videos and clips, project bounded virtual
   videos, decorate native entity cards, add scoped channel-video tabs, and
   plan work through the host contract. It must not couple core queries or
@@ -247,7 +252,8 @@ this snapshot are:
 3. Persist scheduled Update last-run and failure state across restarts.
 4. Improve hierarchy and partial-selection clarity in nested filters.
 5. Define release/changelog practice and supported Docker packaging.
-6. Keep Download and Comments as separately packaged optional plugins.
+6. Keep Download and Comments as separately packaged optional plugins; Comments
+   now has its own implementation in the sibling YT Comments repository.
 7. Keep deleted-view reconciliation review-first and reversible; incomplete or
    suspicious history scans must never create deletion evidence.
 

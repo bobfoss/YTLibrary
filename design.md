@@ -1100,6 +1100,28 @@ Domain payloads still belong entirely to the plugin.
 
 ### Lifecycle hooks
 
+Additive host features for acquisition plugins:
+
+- `youtube_next_session_v1` extends the authenticated watch session with the
+  read-only `next` endpoint and optional `comment_id` highlight parameter when
+  opening the watch session. The host still owns cookies, context, request
+  pacing, proxy and response limits; signed-out responses fail explicitly.
+- `my_activity_session_v1` exposes `context.my_activity_session()` as a context
+  manager. `request_text(relative_path, fields=None)` supports bounded product
+  pages and the Google batch RPC transport at a fixed origin. The plugin owns
+  payload interpretation; host owns authentication and guarded cookie rotation.
+- `worker_followup_v1` exposes `runtime.enqueue_process(worker_id, params)` for
+  follow-up work belonging to the same plugin through normal planning.
+- `video_discovery_v1` exposes `runtime.discover_videos([{video_id, title}])`.
+  It adds observed identities only when missing and queues metadata; existing
+  canonical rows and watch occurrences are unchanged. Requests are limited to
+  1,000 explicitly validated video IDs.
+
+The browser host also provides `refreshSearch()` to invalidate the current
+search cache and render page one after plugin preference changes, plus
+`ui.formatTime()` using the configured display timezone. Separate plugin result
+types respect their declared **Search in** checkbox when a query is present.
+
 Processes opt into hooks by listing their IDs in `hooks`. The current host
 events are:
 

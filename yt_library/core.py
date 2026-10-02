@@ -1566,7 +1566,7 @@ def request_youtubei_json(
     *,
     api_path: str = "browse",
 ) -> dict[str, Any]:
-    if api_path not in {"browse", "get_panel", "player"}:
+    if api_path not in {"browse", "get_panel", "player", "next"}:
         raise ValueError(f"Unsupported YouTubei API path: {api_path}")
     origin = "https://www.youtube.com"
     headers = {
