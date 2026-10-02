@@ -799,6 +799,13 @@ uses `catalogCount` for unloaded counts. The plugin owns the ordering within
 its separate result page. Host sort selection remains authoritative for native
 entity results.
 
+A plugin may combine `videoFacet` with `separateResults: true` and the same
+`fetch`/`renderResult` contract (`video_facet_result_cards_v1`). Its selector
+stays nested under Videos; separate cards are fetched only while Videos and
+the facet's present child are enabled. Its Search in field should apply to
+`videos`. `filter_videos` supplies video presence and search matches for the
+shared native filters and counts, while plugin results remain separate cards.
+
 A video-oriented plugin may expose read-only virtual videos for IDs absent from
 YTL:
 

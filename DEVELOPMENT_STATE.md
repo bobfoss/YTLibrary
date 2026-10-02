@@ -154,6 +154,9 @@ facts, transient PIDs, or other runtime-only data here.
   follow-up planning, and explicit video discovery. Discovery queues metadata
   only for newly added IDs and never creates watch occurrences. The plugin owns
   account participation, thread storage, its schema, search, and presentation.
+  Comments is a Videos facet with comments/no comments children and persisted
+  choices; the additive `video_facet_result_cards_v1` feature lets it retain
+  separate thread result cards when the comments child is enabled.
 - Plugin search can enrich canonical videos and clips, project bounded virtual
   videos, decorate native entity cards, add scoped channel-video tabs, and
   plan work through the host contract. It must not couple core queries or

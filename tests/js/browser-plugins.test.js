@@ -161,6 +161,7 @@ test('standalone result plugins honor their Search in field without hiding empty
     browserSearchFieldDefinition: () => ({key: 'sample'}),
     browserPluginSearchFieldEnabled: () => enabled,
     browserPluginHost: () => ({}),
+    browserVideoFacetResultPlugins: () => [],
   };
   vm.runInNewContext(indexSource.slice(start, end), context);
   assert.equal((await context.fetchBrowserPluginSearches('needle', 20, 0)).total, 0);
@@ -169,6 +170,41 @@ test('standalone result plugins honor their Search in field without hiding empty
   assert.equal((await context.fetchBrowserPluginSearches('needle', 20, 0)).total, 1);
   enabled = false;
   assert.equal((await context.fetchBrowserPluginSearches('', 20, 0)).total, 1);
+  assert.equal(calls, 2);
+});
+
+test('video facets can keep separate result cards without a top-level selector', async () => {
+  let videosEnabled = true;
+  let present = true;
+  let calls = 0;
+  const sample = {id: 'sample', search: {
+    videoFacet: {}, separateResults: true, fetchEmptyQuery: true,
+    fetch: async () => { calls += 1; return {total: 1, results: [{id: 'thread'}]}; },
+  }};
+  const context = {
+    browserSearchPlugins: () => [sample],
+    browserVideoFilterPlugins: () => [sample],
+    browserVideoFacetDefinition: plugin => plugin.search.videoFacet,
+    browserClipFacetDefinition: () => null,
+    browserVideoFacetState: () => ({present, absent: true}),
+    searchKindEnabled: () => videosEnabled,
+    browserSearchFieldDefinition: () => null,
+    browserPluginHost: () => ({}),
+  };
+  for (const name of ['browserResultSearchPlugins', 'browserVideoFacetResultPlugins', 'fetchBrowserPluginSearches']) {
+    const start = indexSource.indexOf(`${name === 'fetchBrowserPluginSearches' ? 'async ' : ''}function ${name}(`);
+    const match = /\n(?:async )?function /.exec(indexSource.slice(start + 1));
+    vm.runInNewContext(indexSource.slice(start, start + 1 + match.index), context);
+  }
+  assert.equal(context.browserResultSearchPlugins().length, 0);
+  assert.equal((await context.fetchBrowserPluginSearches('', 20, 0)).total, 1);
+  present = false;
+  assert.equal((await context.fetchBrowserPluginSearches('', 20, 0)).total, 0);
+  present = true;
+  videosEnabled = false;
+  assert.equal((await context.fetchBrowserPluginSearches('', 20, 0)).total, 0);
+  videosEnabled = true;
+  assert.equal((await context.fetchBrowserPluginSearches('needle', 20, 0)).total, 1);
   assert.equal(calls, 2);
 });
 

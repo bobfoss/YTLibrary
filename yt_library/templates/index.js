@@ -392,6 +392,15 @@ function browserResultSearchPlugins() {
   ));
 }
 
+function browserVideoFacetResultPlugins() {
+  if (!searchKindEnabled('videos')) return [];
+  return browserVideoFilterPlugins().filter(plugin => (
+    plugin.search.separateResults === true
+    && typeof plugin.search.fetch === 'function'
+    && browserVideoFacetState(plugin).present
+  ));
+}
+
 function browserPluginAssetUrl(pluginId, path, version = '') {
   const encodedPath = String(path || '').split('/').map(encodeURIComponent).join('/');
   const baseUrl = `/plugins/${encodeURIComponent(pluginId)}/assets/${encodedPath}`;
@@ -4736,7 +4745,11 @@ async function fetchBrowserPluginSearches(query, limit, offset) {
   let totalIsExact = true;
   let remaining = limit;
   let localOffset = offset;
-  for (const plugin of browserResultSearchPlugins().filter(item => searchKindEnabled(item.id))) {
+  const plugins = [
+    ...browserResultSearchPlugins().filter(item => searchKindEnabled(item.id)),
+    ...browserVideoFacetResultPlugins(),
+  ];
+  for (const plugin of plugins) {
     let payload = { total: 0, totalIsExact: true, results: [] };
     if ((query || plugin.search.fetchEmptyQuery === true)
       && (!query || !browserSearchFieldDefinition(plugin) || browserPluginSearchFieldEnabled(plugin))) {

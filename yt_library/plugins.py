@@ -41,6 +41,7 @@ PLUGIN_HOST_FEATURES = frozenset(
         "my_activity_session_v1",
         "worker_followup_v1",
         "video_discovery_v1",
+        "video_facet_result_cards_v1",
     }
 )
 PLUGIN_ENTRY_POINT_GROUP = "yt_library.plugins"
