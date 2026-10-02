@@ -1368,7 +1368,7 @@ Workers should be visible and interruptible from `/admin`. Queue counts, preview
 The UI should be a dense local operations tool rather than a marketing page.
 
 - Keep primary views immediately useful: unscoped search, scoped category lists, occurrence History, detail views, and the admin dashboard.
-- Prefer local playlist navigation; provide separate external links for opening YouTube. A single-video detail page uses the canonical bare watch URL, while cards rendered inside a specific playlist may retain that playlist context in the external link.
+- Prefer local playlist navigation; provide separate external links for opening YouTube. A single-video detail card's title and separate YouTube action use the canonical bare watch URL and open in a new tab, while cards rendered inside a specific playlist may retain that playlist context in the external link.
 - Show channel avatars and creator links when normalized channel metadata exists.
 - Show actionable availability, visibility, and Archivarix status while keeping internal source and reconciliation-match labels out of the user interface.
 - Keep controls and queues foldable on admin sections so status cards and run badges remain visible.

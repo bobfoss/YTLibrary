@@ -5802,7 +5802,7 @@ function videoDetailCardFor(video) {
       <div>
         ${channelName ? `<div class="details video-card-channel">${creatorHtml(video.metadata_channel_thumbnail_path, channelName, channelUrl)}</div>` : ''}
         <div class="title-row">
-          <div class="video-title">${escapeHtml(titleText)}</div>
+          ${watchUrl ? `<a class="video-title playlist-title" href="${escapeHtml(watchUrl)}" target="_blank" rel="noreferrer">${escapeHtml(titleText)}</a>` : `<div class="video-title">${escapeHtml(titleText)}</div>`}
           ${watchUrl ? `<a class="external-link" href="${escapeHtml(watchUrl)}" target="_blank" rel="noreferrer" title="Open on YouTube" aria-label="Open ${escapeHtml(titleText)} on YouTube">${externalLinkSvg()}</a>` : ''}
           <span class="entity-card-slot entity-card-actions" data-entity-card-slot="actions"></span>
         </div>
