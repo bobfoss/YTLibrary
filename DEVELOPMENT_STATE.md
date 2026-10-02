@@ -196,6 +196,13 @@ facts, transient PIDs, or other runtime-only data here.
   an in-memory batch. When account, playlist, or history work reaches the front
   of the eligible queue, active workers finish before it starts; lower-priority
   jobs do not refill slots and indefinitely delay this exclusive work.
+- Automatic broadcast rechecks now use configurable age/recent-watch cadence
+  and deterministic staggered hour slots: hourly for recent watches/new streams
+  and imminent upcoming broadcasts, six-hourly for intermediate streams or
+  distant upcoming broadcasts, daily for long-running streams. New history
+  occurrences and manual refresh retain full metadata work. Unavailable videos
+  cannot remain active in canonical writes or browser/plugin projections; no
+  end timestamp is inferred. No Data API status polling was integrated.
 - Update, Initialize, and Rebuild share the declarative queue planner. Update
   promotes its complete selected batch ahead of older backlog while retaining
   internal ordering. Rebuild replaces only regenerable core plan rows and

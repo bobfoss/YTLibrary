@@ -2502,6 +2502,7 @@ class AdminServerTests(unittest.TestCase):
             handler.plugin_manager = Mock()
             handler._start_worker_queue = Mock()
             handler.send_json = Mock()
+            handler.config_data = {}
 
             with (
                 patch.object(server.WORKER_QUEUE_DISPATCHER, "is_running", return_value=False),

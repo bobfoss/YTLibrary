@@ -16,6 +16,7 @@ from .annotations import (
     annotation_search_matches,
     attach_annotations,
 )
+from .broadcasts import effective_broadcast_status, effective_broadcast_status_sql
 from .core import (
     archivarix_media_url,
     history_match_type_label,
@@ -580,7 +581,7 @@ def _video_candidate_query(
                  '' AS match_type, '' AS match_confidence, '' AS added_at,
                  v.is_playable, v.availability, v.reaction, v.uploader_category,
                  v.note,
-                 v.video_type, v.broadcast_status, v.ai_disclosure,
+                 v.video_type, {effective_broadcast_status_sql()} AS broadcast_status, v.ai_disclosure,
                  COALESCE(hs.watch_progress_percent, 0) AS watch_progress_percent,
                  COALESCE(hs.watch_count, 0) AS watch_count,
                  COALESCE(hs.latest_watch_at, '') AS latest_watch_at,
@@ -611,7 +612,7 @@ def _video_candidate_query(
                  COALESCE(v.uploader_category, '') AS uploader_category,
                  COALESCE(v.note, '') AS note,
                  COALESCE(v.video_type, '') AS video_type,
-                 v.broadcast_status,
+                 {effective_broadcast_status_sql()} AS broadcast_status,
                  v.ai_disclosure,
                  COALESCE(hs.watch_progress_percent, 0) AS watch_progress_percent,
                  CASE WHEN pi.video_id IS NULL THEN pi.unavailable_kind ELSE v.availability END AS availability,
@@ -679,7 +680,7 @@ def _video_type_category(item: Mapping[str, Any]) -> str:
 def _video_broadcast_status_category(item: Mapping[str, Any]) -> str:
     if _video_type_category(item) != "livestream":
         return "not_applicable"
-    status = item.get("broadcast_status")
+    status = effective_broadcast_status(item.get("broadcast_status"), str(item.get("availability") or ""), item.get("is_playable"))
     if status is None:
         return "unknown"
     normalized = str(status).strip().lower()
@@ -2316,7 +2317,7 @@ def _hydrate_omni_videos(conn: sqlite3.Connection, results: list[dict[str, Any]]
                v.upload_date AS metadata_upload_date,
                v.uploader_category,
                v.video_type,
-               v.broadcast_status,
+               {effective_broadcast_status_sql()} AS broadcast_status,
                v.broadcast_started_at,
                v.broadcast_ended_at,
                v.broadcast_status_checked_at,
@@ -2624,7 +2625,7 @@ def _omni_video_sql_data(
                  COALESCE(v.availability, '') AS availability,
                  COALESCE(v.uploader_category, '') AS uploader_category,
                  COALESCE(v.video_type, '') AS video_type,
-                 v.broadcast_status,
+                 {effective_broadcast_status_sql()} AS broadcast_status,
                  v.ai_disclosure,
                  COALESCE(v.note, '') AS note,
                  CASE WHEN {video_title_hit} THEN 1 ELSE 0 END AS title_hit,
@@ -4116,7 +4117,7 @@ def history_search_data(
                    v.duration_text AS metadata_duration,
                    v.uploader_category,
                    v.video_type,
-                   v.broadcast_status,
+                   {effective_broadcast_status_sql()} AS broadcast_status,
                    v.broadcast_started_at,
                    v.broadcast_ended_at,
                    v.broadcast_status_checked_at,

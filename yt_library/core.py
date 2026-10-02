@@ -57,6 +57,7 @@ from .database import (
     worker_queue_order_sql,
 )
 from .history import history_match_type_for_identity, history_source_type_for_identity
+from .broadcasts import broadcast_recheck_due, effective_broadcast_status, effective_broadcast_status_sql
 from .request_pacing import (
     RequestPacer as RequestPacer,
     configure_request_pacing as configure_request_pacing,
@@ -838,6 +839,10 @@ def upsert_video(
         canonical_availability = existing["availability"]
     last_seen = now if incoming_playability == 1 else (existing["last_seen_available_at"] if existing else None)
     metadata_source = source if authoritative and source else (existing["metadata_source"] if existing else source)
+    canonical_broadcast_status = effective_broadcast_status(
+        current_observation("broadcast_status", broadcast_status),
+        canonical_availability, canonical_playability,
+    )
     values = (
         canonical_title,
         current("description", description),
@@ -847,7 +852,7 @@ def upsert_video(
         current("upload_date", upload_date),
         current("uploader_category", uploader_category),
         current("video_type", video_type),
-        current_observation("broadcast_status", broadcast_status),
+        canonical_broadcast_status,
         current_broadcast_field("broadcast_started_at", broadcast_started_at),
         current_broadcast_field("broadcast_ended_at", broadcast_ended_at),
         current_observation(
@@ -9717,7 +9722,15 @@ def metadata_queue_candidate_rows(
     stale_days: int = 30,
     metadata_kind: str = "all",
     never_fetched_only: bool = False,
+    config_data: dict[str, Any] | None = None,
+    observed_at: str | None = None,
 ) -> list[sqlite3.Row]:
+    now = datetime.fromisoformat((observed_at or utc_now()).replace("Z", "+00:00"))
+    config_data = config_data or {}
+    conn.create_function("ytl_broadcast_due", 5, lambda video_id, status, start, checked, watch: int(
+        broadcast_recheck_due(video_id, status, start, checked, watch, now=now, config=config_data)
+    ))
+    broadcast_due = "ytl_broadcast_due(video_id, broadcast_status, broadcast_started_at, broadcast_status_checked_at, latest_history_at) = 1"
     stale_before = utc_days_ago(stale_days)
     metadata_kind = (metadata_kind or "all").strip().lower()
     if metadata_kind not in {"all", "video", "channel"}:
@@ -9726,11 +9739,11 @@ def metadata_queue_candidate_rows(
     params: list[Any] = []
     if never_fetched_only:
         conditions.append(
-            "(fetched_at IS NULL OR broadcast_status IN ('upcoming', 'live'))"
+            f"(fetched_at IS NULL OR {broadcast_due})"
         )
     elif not force:
         conditions.append(
-            "(fetch_status = 'error' OR fetched_at IS NULL OR fetched_at < ?)"
+            f"(fetch_status = 'error' OR fetched_at IS NULL OR fetched_at < ? OR {broadcast_due})"
         )
         params.append(stale_before)
     if metadata_kind == "channel":
@@ -9752,7 +9765,9 @@ def metadata_queue_candidate_rows(
                  ch.title,
                  ch.thumbnail_path,
                  '' AS latest_history_at,
-                 '' AS broadcast_status
+                 '' AS broadcast_status,
+                 NULL AS broadcast_started_at,
+                 NULL AS broadcast_status_checked_at
           FROM channels ch
           UNION ALL
           SELECT v.video_id,
@@ -9767,7 +9782,9 @@ def metadata_queue_candidate_rows(
                  v.title,
                  v.thumbnail_path,
                  COALESCE(h.latest_history_at, '') AS latest_history_at,
-                 COALESCE(v.broadcast_status, '') AS broadcast_status
+                 {effective_broadcast_status_sql()} AS broadcast_status,
+                 v.broadcast_started_at,
+                 v.broadcast_status_checked_at
           FROM videos v
           LEFT JOIN channels ch ON ch.channel_id = v.channel_id
           LEFT JOIN playlist_items pi ON pi.video_id = v.video_id
@@ -10166,6 +10183,7 @@ def worker_queue_counts_by_type(conn: sqlite3.Connection) -> dict[str, int]:
 def enqueue_library_queue_plan(
     conn: sqlite3.Connection,
     plan: LibraryQueuePlan,
+    config_data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if plan.playlist_selection not in {"all", "due"}:
         raise ValueError(f"Unsupported playlist queue selection: {plan.playlist_selection}")
@@ -10182,6 +10200,7 @@ def enqueue_library_queue_plan(
         stale_days=plan.metadata_stale_days,
         metadata_kind="all",
         never_fetched_only=plan.metadata_selection == "never",
+        config_data=config_data,
     )
 
     cleared_by_type = {
@@ -10319,8 +10338,8 @@ def enqueue_library_queue_plan(
     }
 
 
-def enqueue_update_tasks(conn: sqlite3.Connection) -> dict[str, int]:
-    stats = enqueue_library_queue_plan(conn, UPDATE_QUEUE_PLAN)
+def enqueue_update_tasks(conn: sqlite3.Connection, config_data: dict[str, Any] | None = None) -> dict[str, int]:
+    stats = enqueue_library_queue_plan(conn, UPDATE_QUEUE_PLAN, config_data)
     return {
         key: int(stats[key])
         for key in (
@@ -10339,9 +10358,9 @@ def enqueue_update_tasks(conn: sqlite3.Connection) -> dict[str, int]:
     }
 
 
-def enqueue_initialization_tasks(conn: sqlite3.Connection) -> dict[str, int | bool]:
+def enqueue_initialization_tasks(conn: sqlite3.Connection, config_data: dict[str, Any] | None = None) -> dict[str, int | bool]:
     had_data = library_has_data(conn)
-    stats = enqueue_library_queue_plan(conn, INITIALIZATION_QUEUE_PLAN)
+    stats = enqueue_library_queue_plan(conn, INITIALIZATION_QUEUE_PLAN, config_data)
     return {
         "had_data": had_data,
         "metadata": int(stats["metadata"]),
@@ -10356,8 +10375,8 @@ def enqueue_initialization_tasks(conn: sqlite3.Connection) -> dict[str, int | bo
     }
 
 
-def rebuild_library_queue(conn: sqlite3.Connection) -> dict[str, Any]:
-    return enqueue_library_queue_plan(conn, REBUILD_QUEUE_PLAN)
+def rebuild_library_queue(conn: sqlite3.Connection, config_data: dict[str, Any] | None = None) -> dict[str, Any]:
+    return enqueue_library_queue_plan(conn, REBUILD_QUEUE_PLAN, config_data)
 
 
 def enqueue_playlist_metadata_targets(

@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .database import connect
+from .broadcasts import effective_broadcast_status_sql
 from .network import socks5_proxy_handlers, ytdlp_proxy_options
 from .request_pacing import request_paced_youtube_dl
 from .time_utils import utc_now
@@ -304,7 +305,7 @@ def _library_videos_by_id(
                     f"""
                     SELECT video_id, title, COALESCE(channel_id, '') AS channel_id,
                            upload_date, availability, is_playable, video_type,
-                           broadcast_status, broadcast_started_at,
+                           {effective_broadcast_status_sql('')} AS broadcast_status, broadcast_started_at,
                            broadcast_ended_at, broadcast_status_checked_at
                     FROM videos
                     WHERE video_id IN ({placeholders})
@@ -327,10 +328,10 @@ class PluginPlanningContext:
 
     def library_videos(self) -> Iterable[dict[str, Any]]:
         rows = self._conn.execute(
-            """
+            f"""
             SELECT video_id, title, COALESCE(channel_id, '') AS channel_id,
                    upload_date, availability, is_playable,
-                   video_type, broadcast_status, broadcast_started_at,
+                   video_type, {effective_broadcast_status_sql('')} AS broadcast_status, broadcast_started_at,
                    broadcast_ended_at, broadcast_status_checked_at
             FROM videos
             WHERE video_id <> ''

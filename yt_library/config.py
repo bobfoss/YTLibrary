@@ -71,6 +71,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "archivarix_retry_attempts": 3,
     "archivarix_retry_backoff_seconds": 2.0,
     "archivarix_auto_retry": True,
+    "broadcast_polling": {
+        "recent_watch_days": 7,
+        "initial_live_hours": 24,
+        "established_live_days": 7,
+        "upcoming_near_hours": 24,
+        "frequent_hours": 1,
+        "normal_hours": 6,
+        "long_running_hours": 24,
+    },
 }
 
 _LEGACY_YOUTUBE_REQUEST_INTERVAL_SECONDS = 5.0
@@ -529,7 +538,21 @@ def configured_archivarix_auto_retry(config: dict[str, Any]) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def configured_broadcast_polling(config: dict[str, Any]) -> dict[str, int]:
+    incoming = config.get("broadcast_polling")
+    incoming = incoming if isinstance(incoming, dict) else {}
+    defaults = DEFAULT_CONFIG["broadcast_polling"]
+    result = {}
+    for key, default in defaults.items():
+        try:
+            result[key] = max(1, min(8760, int(incoming.get(key, default))))
+        except (TypeError, ValueError, OverflowError):
+            result[key] = default
+    return result
+
+
 CONFIG_NORMALIZERS: dict[str, Callable[[dict[str, Any]], Any]] = {
+    "broadcast_polling": configured_broadcast_polling,
     "display_timezone": configured_display_timezone,
     "week_start": configured_week_start,
     "hide_empty_filters": configured_hide_empty_filters,

@@ -447,7 +447,7 @@ def enqueue_library_update(
     conn = connect(db_path)
     try:
         with conn:
-            queue_stats = enqueue_update_tasks(conn)
+            queue_stats = enqueue_update_tasks(conn, config_data)
             plugin_queue = (
                 plugin_manager.enqueue_hook(
                     conn,
@@ -861,7 +861,7 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
 
     def _handle_initialize(self) -> None:
         def enqueue(conn: sqlite3.Connection) -> dict[str, Any]:
-            core_queue = enqueue_initialization_tasks(conn)
+            core_queue = enqueue_initialization_tasks(conn, self.config_data)
             plugin_manager = getattr(self, "plugin_manager", None)
             return {
                 **core_queue,
@@ -2517,7 +2517,7 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
             conn = connect(self.db_path)
             try:
                 with conn:
-                    queue = rebuild_library_queue(conn)
+                    queue = rebuild_library_queue(conn, self.config_data)
                 self.send_json(
                     {
                         "ok": True,

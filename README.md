@@ -358,6 +358,21 @@ date sorting uses the My Activity subscription date as the gold standard, then
 the Data API subscription date, then a first watch observed directly in history.
 Metadata and playlist backfills do not assign channel first-seen dates.
 
+### Adaptive broadcast checks
+
+Update rechecks recently watched broadcasts (within seven days) and newly live
+streams hourly. Streams live for one to seven days are checked every six hours;
+older streams daily. Upcoming broadcasts are checked every six hours until
+within 24 hours of their scheduled start, then hourly. Slower checks are spread
+across hourly Updates using stable per-video time slots. Manual Refresh and new
+watch-history metadata jobs still run normally. These defaults can be overridden
+through the `broadcast_polling` object in `yt_library.config.json`.
+
+Unavailable videos no longer display as live or appear in active-live results.
+They retain their identity and known timestamps, without an invented broadcast
+end time. These checks use the existing direct-page fetches and require no API
+key or OAuth setup.
+
 ## Testing
 
 The test suite uses the Python standard library `unittest` runner, so there is no separate test dependency. Current coverage focuses on stable, local behavior: date/time normalization, reaction extraction, Takeout and My Activity watch-history parsing and reconciliation, fresh SQLite schema bootstrap, bootstrap/list/detail read models, and omni/history search filtering, deduplication, sorting, and paging. Tests must not use real cookies, network requests, or personal runtime databases.

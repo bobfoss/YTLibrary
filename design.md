@@ -1392,6 +1392,26 @@ does not define a generic rebuild hook.
 
 Workers should be visible and interruptible from `/admin`. Queue counts, previews, timing estimates, stop buttons, and incrementally polled logs are part of the design, not just debugging conveniences. A server restart interrupts active in-process workers, so unfinished metadata, playlist, history, and placeholder recovery runs are marked interrupted during startup.
 
+Automatic broadcast metadata rechecks follow `broadcast_polling` in the runtime
+config. Recently watched broadcasts (seven days) and newly live streams (less
+than 24 hours) are checked hourly; live streams aged one to seven days are
+checked every six hours and older streams daily. Upcoming broadcasts are
+checked hourly within 24 hours of their scheduled start, otherwise every six
+hours. Missing start evidence uses the hourly cadence. Stable per-video hashed
+UTC hour slots distribute the slower checks across hourly Updates; a scan in
+the current slot satisfies that slot, including a full history-triggered scan.
+Missed slots remain due after downtime. Manual force-refreshes and metadata
+queued by new watch occurrences bypass this automatic-selection policy.
+
+Confirmed unavailable videos cannot expose `live` or `upcoming` in
+canonical upserts or browser/plugin read projections. Their lifecycle becomes
+unknown, while prior start/end evidence and useful identity remain intact;
+unavailability is not proof of an end timestamp. Successful later available
+observations may restore an active status. Public upcoming premieres remain
+upcoming even when not yet playable. Transient/authentication failures
+without availability evidence preserve the previous state. This policy uses
+direct watch-page metadata checks, not YouTube Data API polling.
+
 ## UI Goals
 
 The UI should be a dense local operations tool rather than a marketing page.
