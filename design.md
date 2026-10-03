@@ -387,6 +387,13 @@ The bundled catalog is merged with a cached copy refreshed explicitly from YTL's
 fixed GitHub URL. Conflicting immutable releases/identities are rejected; refresh
 failure leaves the previous valid catalog. There are no automatic code updates.
 
+The host repository is `bobfoss/YTLibrary`; plugin repository names use `YT-`
+prefixes. Existing catalog repository/release URLs retain their original
+lowercase spelling, which GitHub continues to serve after the case-only renames.
+Keep those immutable records unchanged so existing cached catalogs remain
+compatible. Distribution names, plugin IDs, and released artifact bytes are
+unchanged by repository renaming.
+
 `yt_library/plugin_installation.py` owns durable operation state and offline
 application. Windows Admin launches `scripts/service.ps1 plugin -OperationId ID`
 detached from the HTTP process. The existing global controller mutex covers the

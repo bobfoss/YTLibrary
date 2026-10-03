@@ -24,7 +24,7 @@ from . import plugin_packages as packages
 from .config import configured_proxy, load_config, save_config
 
 ROOT = packages.ROOT
-CATALOG_URL = "https://raw.githubusercontent.com/bobfoss/yt-library/main/plugins/catalog.json"
+CATALOG_URL = "https://raw.githubusercontent.com/bobfoss/YTLibrary/main/plugins/catalog.json"
 TERMINAL = {"succeeded", "failed"}
 ACTIONS = {"install", "update", "remove", "enable", "disable"}
 

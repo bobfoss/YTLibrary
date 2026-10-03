@@ -154,6 +154,20 @@ class InstallationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "immutable"):
             self.installer.catalog()
 
+    def test_refresh_uses_renamed_repository_and_preserves_release_records(self):
+        opener = Mock()
+        opener.open.return_value = io.BytesIO(json.dumps(self.fixture.catalog).encode())
+        with patch.object(installation.urllib.request, "build_opener", return_value=opener):
+            self.installer.refresh({})
+        opener.open.assert_called_once_with(
+            "https://raw.githubusercontent.com/bobfoss/YTLibrary/main/plugins/catalog.json",
+            timeout=30,
+        )
+        self.assertEqual(self.installer.catalog(), self.fixture.catalog)
+        self.assertEqual(
+            packages.read_json(self.installer.directory / "catalog.json"), self.fixture.catalog,
+        )
+
     def test_public_progress_does_not_expose_config_or_dependency_inventory(self):
         self.prepared()
         view = self.installer.view({"plugins": {}}, [])

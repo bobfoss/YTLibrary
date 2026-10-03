@@ -405,11 +405,11 @@ The database stores canonical video metadata once in `videos`; playlist membersh
 
 The known plugin source repositories are listed in
 [`plugins/catalog.json`](plugins/catalog.json):
-[YT Comments](https://github.com/bobfoss/yt-comments),
-[YT Live Chat](https://github.com/bobfoss/yt-live-chat),
-[YT PocketTube](https://github.com/bobfoss/yt-pockettube),
-[YT Subtitles](https://github.com/bobfoss/yt-subtitles), and
-[YTLLM](https://github.com/bobfoss/yt-llm).
+[YT Comments](https://github.com/bobfoss/YT-comments),
+[YT Live Chat](https://github.com/bobfoss/YT-live-chat),
+[YT PocketTube](https://github.com/bobfoss/YT-pockettube),
+[YT Subtitles](https://github.com/bobfoss/YT-subtitles), and
+[YTLLM](https://github.com/bobfoss/YT-llm).
 YTL and these five plugins use `GPL-3.0-or-later`. Their versioned GitHub releases
 provide verified wheels and source tarballs. On Windows, open **Admin → Advanced
 → Plugins → Install and manage plugins**. Choose **Install**, then **Enable**
