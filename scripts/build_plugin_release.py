@@ -15,7 +15,8 @@ import tempfile
 import tomllib
 import zipfile
 
-from plugin_packages import ROOT, inspect_wheel, pip_network_arguments, read_json, sha256, validate_catalog, write_json
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from yt_library.plugin_packages import ROOT, inspect_wheel, pip_network_arguments, read_json, sha256, validate_catalog, write_json  # noqa: E402
 
 
 def build_release(repository: Path, catalog_path: Path, plugin_id: str, destination: Path) -> dict:

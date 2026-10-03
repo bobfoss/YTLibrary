@@ -133,16 +133,24 @@ facts, transient PIDs, or other runtime-only data here.
 
 - The five implemented plugins have public repositories under `bobfoss` on
   GitHub, listed in `plugins/catalog.json`; all five and YTL are licensed
-  GPL-3.0-or-later. The catalog still has no approved installable releases.
+  GPL-3.0-or-later. All five have approved, hash-verified wheel/sdist releases.
   `scripts/build_plugin_release.py`, `smoke_plugin_wheel.py`, and
   `plugin_packages.py` provide clean-commit wheel/sdist candidates, fresh-config
   wheel startup checks, catalog/artifact validation, protected editable inventory,
   and non-mutating dependency preflight. Wheels carry plugin-owned
   `ytl-plugin.json` API/feature/config-template declarations. Existing packages
   are pinned during resolution; development installs cannot be replaced.
-  These tools do not change live installations, activation, or service state. Dependency-wheel
-  staging, publication/approval, serialized maintenance, durable operations,
-  and Advanced Admin package controls remain planned in `design.md`.
+  The preparation CLI remains non-mutating. Windows Advanced Admin now supports
+  install/update/enable/disable/code-only removal. `plugin_installation.py`
+  stages dependencies, persists operations, and uses `service.ps1 plugin` under
+  the existing controller mutex. The CLI shim applies verified offline packages
+  before server/plugin imports; the SCM supervisor stays running unchanged.
+  Queue intent is captured after downloads, immediately before pausing workers.
+  New installs are disabled, using external `plugin-data/<id>/` config; existing
+  paths and all plugin data survive removal. Editable code stays protected.
+  Interrupted apply is never replayed automatically. Package replacement can
+  roll back before activation, but startup errors do not roll back databases.
+  CI publication automation and artifact retention remain in `TODO.md`.
 - Plugins are optional, separately packaged repositories with their own data,
   schema, migrations, configuration, caches, source artifacts, and tests.
 - Core must not import a plugin package, depend on its database, add its domain

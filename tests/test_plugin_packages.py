@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 import urllib.request
 import zipfile
 
-from scripts import plugin_packages as packages
+from yt_library import plugin_packages as packages
 
 
 class PluginPackageTests(unittest.TestCase):

@@ -43,6 +43,10 @@
     a:hover { text-decoration: underline; }
     .workstreams { display: grid; gap: 24px; margin-bottom: 18px; }
     .plugins-panel { margin-bottom: 16px; }
+    .plugin-package-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 12px; margin: 14px 0; }
+    .plugin-package-grid h3 { margin: 0; font-size: 16px; }
+    .plugin-package-grid .metric { overflow-wrap: anywhere; }
+    .plugin-package-grid button:disabled { opacity: 0.5; cursor: not-allowed; }
     .plugin-workstreams:empty { display: none; }
     .plugin-workstream + .plugin-workstream { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 16px; }
     .plugin-workstream-header { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
@@ -403,6 +407,7 @@
 
     <section id="pluginPanel" class="panel plugins-panel advanced-only">
       <div class="queue-title"><h2>Plugins</h2></div>
+      <div id="pluginPackages" class="advanced-only" aria-label="Plugin installation">Loading plugin catalog…</div>
       <div id="pluginWorkstreams" class="plugin-workstreams"></div>
     </section>
 
@@ -547,5 +552,6 @@
   </main>
   <script src="/admin-transport.js"></script>
   <script src="/admin.js"></script>
+  <script src="/admin-plugin-packages.js"></script>
 </body>
 </html>

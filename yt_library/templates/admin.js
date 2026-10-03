@@ -932,7 +932,7 @@ function renderPluginWorkstreams(plugins) {
       </section>
     `);
   }
-  fields.pluginPanel.hidden = plugins.length === 0;
+  fields.pluginPanel.hidden = false;
   fields.pluginPanel.classList.toggle('advanced-only', !hasBasicPlugin);
   fields.pluginWorkstreams.innerHTML = sections.join('');
   fields.videoPluginProcesses.innerHTML = videoActions.join('');
@@ -1787,6 +1787,11 @@ async function savePluginEnabled(event) {
   toggle.disabled = true;
   if (status) status.textContent = 'Saving';
   try {
+    if (window.YTLibraryPluginPackages) {
+      await window.YTLibraryPluginPackages.setEnabled(pluginId, enabled);
+      if (status) status.textContent = 'Maintenance queued';
+      return;
+    }
     const payload = await AdminTransport.postJson(
       `/api/admin/plugins/${encodeURIComponent(pluginId)}/enabled`,
       { enabled: enabled ? '1' : '0' },
@@ -1807,6 +1812,7 @@ async function savePluginEnabled(event) {
 }
 fields.pluginWorkstreams.addEventListener('submit', enqueuePluginProcess);
 fields.pluginWorkstreams.addEventListener('change', savePluginEnabled);
+window.addEventListener('ytl-plugins-changed', () => loadStatus({ force: true }).catch(error => console.error(error)));
 fields.videoPluginProcesses.addEventListener('submit', enqueuePluginProcess);
 document.getElementById('startLiveHistory').addEventListener('click', () => post('/api/admin/live-history/start').catch(error => alert(error.message)));
 fields.updateFrequency.addEventListener('change', () => {

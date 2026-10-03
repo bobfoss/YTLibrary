@@ -10,6 +10,7 @@ import math
 import os
 import posixpath
 import re
+import secrets
 import sqlite3
 import subprocess
 import sys
@@ -21,6 +22,8 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
 from .annotations import save_entity_annotation, tag_suggestions
+from .plugin_installation import Installer, maintenance_pending
+from .plugin_packages import PackageError
 from .config import (
     CARD_LAYOUTS,
     ConfigStore,
@@ -160,6 +163,7 @@ HISTORY_WORKFLOW_JS = load_template("history-workflow.js")
 INDEX_JS = load_template("index.js")
 ADMIN_TRANSPORT_JS = load_template("admin-transport.js")
 ADMIN_JS = load_template("admin.js")
+ADMIN_PLUGIN_PACKAGES_JS = load_template("admin-plugin-packages.js")
 FAVICON_SVG = load_template("favicon.svg")
 
 PREFERENCE_POST_PATHS = frozenset(
@@ -649,6 +653,9 @@ class UpdateScheduler:
                 video_thumbs = self._video_thumbs
                 plugin_manager = self._plugin_manager
                 archivarix_checked_utc_date = self._archivarix_checked_utc_date
+            if maintenance_pending(config_data or {}):
+                self._stop.wait(1)
+                continue
             current_utc_date = datetime.now(timezone.utc).date().isoformat()
             if (
                 config_data
@@ -808,6 +815,7 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
         restart_pending: Callable[[], bool],
         request_restart: Callable[[], bool],
         config_store: ConfigStore | None = None,
+        plugin_installer: Installer | None = None,
         directory: str | None = None,
         **kwargs,
     ):
@@ -818,6 +826,7 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
         self.config_data = config_data
         self.config_store = config_store or ConfigStore(config_data)
         self.plugin_manager = plugin_manager
+        self.plugin_installer = plugin_installer
         self.service_started_at = service_started_at
         self.restart_pending = restart_pending
         self.request_restart = request_restart
@@ -1032,6 +1041,7 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
                 "text/javascript; charset=utf-8",
             ),
             "/admin.js": (ADMIN_JS, "text/javascript; charset=utf-8"),
+            "/admin-plugin-packages.js": (ADMIN_PLUGIN_PACKAGES_JS, "text/javascript; charset=utf-8"),
         }
         asset = static_assets.get(path)
         if asset is not None:
@@ -1061,6 +1071,12 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
         return False
 
     def _handle_admin_get(self, parsed: urllib.parse.ParseResult) -> None:
+        if parsed.path == "/api/admin/plugin-packages":
+            try:
+                self.send_json(self.plugin_installer.view(self.config_data, self.plugin_manager.statuses()))
+            except (ValueError, OSError, KeyError) as exc:
+                self.send_json({"error": f"Plugin catalog unavailable: {type(exc).__name__}"}, status=503)
+            return
         if parsed.path == "/api/admin/service/status":
             self.send_json({"service": self.service_status()})
             return
@@ -2356,6 +2372,9 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
             parsed.path,
         )
         if plugin_enabled_match:
+            if getattr(self, "plugin_installer", None) is not None:
+                self.send_json({"error": "Use Admin package management for coordinated enable/disable"}, status=409)
+                return
             plugin_id = plugin_enabled_match.group(1)
             plugins = self.config_data.get("plugins")
             plugin_config = plugins.get(plugin_id) if isinstance(plugins, dict) else None
@@ -2780,6 +2799,16 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         params = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+        installer = getattr(self, "plugin_installer", None)
+        if parsed.path == "/api/admin/plugin-packages":
+            self._handle_package_post()
+            return
+        if installer and installer.maintenance() and parsed.path not in {
+            "/api/admin/queue/stop", "/api/admin/service/restart",
+        }:
+            self.close_connection = True
+            self.send_json({"error": "Plugin maintenance is pausing mutations; try again after restart"}, status=409)
+            return
         if parsed.path.startswith("/api/plugins/"):
             self._handle_plugin_post(parsed)
             return
@@ -2797,6 +2826,40 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
             return
         self.send_error(404, "Not found")
 
+    def _handle_package_post(self) -> None:
+        installer = self.plugin_installer
+        origin = urllib.parse.urlsplit(self.headers.get("Origin", ""))
+        if (not installer or self.headers.get("X-YT-Library-Admin") != "1"
+                or not secrets.compare_digest(self.headers.get("X-YT-Library-Token", ""), installer.token)
+                or origin.scheme not in {"http", "https"} or origin.netloc != self.headers.get("Host")
+                or self.headers.get("Sec-Fetch-Site", "same-origin") not in {"same-origin", "none"}):
+            self.close_connection = True
+            self.send_json({"error": "Same-origin Admin token required"}, status=403)
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 0 < length <= 4096 or self.headers.get("Content-Type", "").split(";")[0] != "application/json":
+                raise ValueError("Expected a bounded JSON request")
+            payload = json.loads(self.rfile.read(length))
+            if not isinstance(payload, dict):
+                raise ValueError("Expected an object")
+            if payload == {"action": "refresh"}:
+                if installer.busy():
+                    raise PackageError("Wait for active maintenance before refreshing the catalog")
+                installer.refresh(self.config_data)
+            elif payload == {"action": "recover"}:
+                op = installer.operation()
+                if not op or not installer.busy():
+                    raise PackageError("No unfinished operation to recover")
+                installer.launch(op)
+            else:
+                installer.begin(payload)
+            self.send_json({"ok": True}, status=202)
+        except (ValueError, OSError) as exc:
+            self.close_connection = True
+            message = str(exc) if isinstance(exc, ValueError) else "Could not launch plugin maintenance"
+            self.send_json({"error": message}, status=409)
+
     def do_PUT(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path.startswith("/api/annotations/"):
@@ -2805,6 +2868,9 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
         self.send_error(404, "Not found")
 
     def do_DELETE(self) -> None:
+        if getattr(self, "plugin_installer", None) and self.plugin_installer.maintenance():
+            self.send_json({"error": "Plugin maintenance is pausing settings mutations"}, status=409)
+            return
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path != "/api/settings/timezone":
             self.send_error(404, "Not found")
@@ -3046,6 +3112,10 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
         result = ROOT
         for part in parts:
             result /= part
+        config = getattr(self, "config_data", {})
+        data_root = config_path({"plugin_data_directory": "plugin-data", **config}, "plugin_data_directory").resolve()
+        if result.resolve().is_relative_to(ROOT / ".plugin-manager") or result.resolve().is_relative_to(data_root):
+            return str(ROOT / ".not-a-served-plugin-resource")
         return str(result)
 
     def log_message(self, format: str, *args: Any) -> None:
@@ -3079,6 +3149,13 @@ def serve(args: argparse.Namespace) -> None:
         proxy_url=configured_proxy(args.config_data),
     )
     config_store = ConfigStore(args.config_data)
+    plugin_installer = Installer()
+    plugin_installer.running_config_matches_controller = (
+        Path(str(args.config_data.get("_config_path"))).resolve() == ROOT / "yt_library.config.json"
+        and args.host == args.config_data.get("host")
+        and int(args.port) == int(args.config_data.get("port", 8765))
+        and db_path.resolve() == config_path(args.config_data, "database").resolve()
+    )
     service_started_at = utc_now()
     restart_requested = threading.Event()
     server: http.server.ThreadingHTTPServer | None = None
@@ -3112,6 +3189,7 @@ def serve(args: argparse.Namespace) -> None:
             restart_pending=restart_pending,
             request_restart=request_restart,
             config_store=config_store,
+            plugin_installer=plugin_installer,
             directory=str(ROOT),
             **handler_kwargs,
         )

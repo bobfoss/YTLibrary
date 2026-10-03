@@ -404,11 +404,41 @@ The known plugin source repositories are listed in
 [YT PocketTube](https://github.com/bobfoss/yt-pockettube),
 [YT Subtitles](https://github.com/bobfoss/yt-subtitles), and
 [YTLLM](https://github.com/bobfoss/yt-llm).
-YTL and these five plugins use `GPL-3.0-or-later`. The catalog still lists source
-projects only: release candidates can now be built and inspected locally, but
-no release artifacts are approved for installation yet. The running application
-does not consume the catalog, and Admin installation remains planned.
-See [the distribution plan](design.md#planned-plugin-distribution-and-management).
+YTL and these five plugins use `GPL-3.0-or-later`. Their versioned GitHub releases
+provide verified wheels and source tarballs. On Windows, open **Admin → Advanced
+→ Plugins → Install and manage plugins**. Choose **Install**, then **Enable**
+when ready. Update, Disable, and Remove code are available for installed plugins.
+PowerShell 7 and YTL's project `.venv` are required; install `requirements.txt`
+after pulling changes. Other platforms retain manual pip installation.
+
+The controller downloads and checks packages while YTL remains online, pauses
+workers, restarts into offline maintenance before any plugin is imported, checks
+service/plugin health, and restores the queue's previous running intent. Admin
+reconnects after restart and shows durable progress/errors. Rapid or overlapping
+requests are rejected. **Refresh catalog** fetches the maintained GitHub catalog;
+a failed refresh preserves the existing catalog. Only exact approved releases
+are accepted, not arbitrary URLs or pip commands.
+
+New plugins start disabled, with external config/data under
+`plugin-data/<plugin-id>/` (override `plugin_data_directory` in YTL's config).
+Existing configured paths are preserved. Removing code never deletes plugin
+configuration or databases; reinstalling reuses them. Development/editable
+checkouts display their source paths and are protected from Update and Remove.
+Unlisted plugins remain manually managed.
+
+Packages are trusted Python code running with YTL's permissions, not sandboxed
+extensions. Existing dependency versions are pinned; conflicts fail rather than
+silently changing core or another plugin. Update needs an approved prior wheel
+for rollback. A failed package replacement can restore that wheel **before**
+activation; startup failures do not roll back plugin databases or migrations.
+Inspect the reported runtime error and disable a faulty plugin before retrying.
+
+Operations and controller logs live in `.plugin-manager/<operation-id>/` and
+are local-only. If a controller is interrupted, use **Reconnect maintenance
+controller**. An interrupted apply is never blindly repeated: the next startup
+disables the affected plugin and reports that manual inspection is needed.
+`scripts/service.ps1 start` restores any pending service/queue recovery.
+See [the architecture](design.md#plugin-distribution-and-management).
 
 ### Plugin packaging and installation preflight
 
@@ -461,10 +491,12 @@ catalog's filename, size, hash, identity, and compatibility metadata.
 Preparation writes a wheel and `plan.json` into a new directory, with the
 environment snapshot and proposed dependencies. It does **not** install or
 enable anything, create plugin data, download the remaining dependency wheels,
-or guarantee that a later environment is unchanged. The pending maintenance
-controller must revalidate, stage dependencies, coordinate workers/service
-lifecycle, and verify activation. There are no Admin install/update/remove
-buttons yet. Keep personal preparation outputs under ignored `.codex/`.
+or guarantee that a later environment is unchanged. The Admin maintenance
+controller adds dependency-wheel downloads, environment revalidation, coordinated
+service replacement, offline installation, and activation verification. Its
+implementation lives in `yt_library/plugin_installation.py`; the preparation
+CLI remains intentionally non-mutating. Keep personal preparation outputs under
+ignored `.codex/`.
 
 YT Library discovers separately installed plugins through the
 `yt_library.plugins` Python entry-point group, but loads only plugins explicitly

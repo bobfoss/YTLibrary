@@ -2905,7 +2905,11 @@ class WorkerQueueDispatcher(_ThreadWorkerLifecycle):
         plugin_manager: PluginManager | None = None,
         queue_ids: Collection[int] | None = None,
     ) -> dict[str, Any]:
+        from .plugin_installation import maintenance_pending
+
         config = config_data or {}
+        if maintenance_pending(config):
+            return {"started": False, "message": "Plugin maintenance is pausing queue dispatch"}
         dispatch_mode = configured_dispatch_mode(config)
         job_dispatch_delay = configured_job_dispatch_delay(config)
         youtube_max_in_flight = configured_youtube_max_in_flight(config)

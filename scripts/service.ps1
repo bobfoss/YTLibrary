@@ -21,7 +21,15 @@ fixed service.stdout.log and service.stderr.log paths in that directory. Prior
 runs are retained in a bounded .codex\service-logs\archive directory.
 
 .PARAMETER Action
-status, start, restart, or stop. The default is status.
+status, start, restart, stop, or plugin. The default is status.
+The plugin action is used by Admin with a durable OperationId. It prepares
+packages under the same controller lock, pauses workers, restarts into offline
+pre-import maintenance, verifies the result, and restores prior queue intent.
+Install/update/remove never replace code in a process with loaded plugins.
+
+.PARAMETER OperationId
+The Admin-created plugin maintenance operation ID. No package URLs or pip
+arguments are accepted. Controller progress is retained across restarts.
 
 .PARAMETER TimeoutSeconds
 Maximum time to wait for each queue, process, port, health, or controller-lock
@@ -49,11 +57,14 @@ in cmd.exe, powershell.exe, or pwsh.exe; doing so can leave a visible console.
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("status", "start", "restart", "stop")]
+    [ValidateSet("status", "start", "restart", "stop", "plugin")]
     [string]$Action = "status",
 
     [ValidateRange(5, 300)]
     [int]$TimeoutSeconds = 90,
+
+    [ValidatePattern('^[0-9a-f]{32}$')]
+    [string]$OperationId,
 
     [switch]$Force,
     [switch]$Json
@@ -81,6 +92,16 @@ $windowsServiceName = "YTLibraryManager-$repoNameToken"
 $operationMutexName = "Global\YTLibraryServiceControl-$repoNameToken"
 $operationLockWaited = $false
 $operationLockWaitSeconds = 0.0
+$pluginHelper = Join-Path $PSScriptRoot "plugin_installation.py"
+
+function Invoke-PluginMaintenance {
+    param([string]$Step)
+    $arguments = @($pluginHelper, $Step, $OperationId)
+    if ($Step -eq "verify") { $arguments += @("--url", $serviceConfig.BaseUrl) }
+    $output = & $venvPython @arguments 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "Plugin maintenance ${Step}: $output" }
+    return $output
+}
 $contendedOperationId = ""
 $contendedOperationAction = ""
 $contendedOperationStage = ""
@@ -1155,13 +1176,35 @@ try {
                 ControlLog = $controlLogPath
             })
         }
-        "restart" {
+        { $_ -in @("restart", "plugin") } {
+            if ($Action -eq "plugin") {
+                if (-not $OperationId) { throw "plugin requires OperationId" }
+                $pluginState = [string](Invoke-PluginMaintenance "state")
+                if ($pluginState -in @("succeeded", "failed")) { break }
+                if ($pluginState -eq "verifying") {
+                    Invoke-PluginMaintenance "verify" | Out-Null
+                    Complete-Recovery $recoveryState $initialStatus | Out-Null
+                    Invoke-PluginMaintenance "finish" | Out-Null
+                    break
+                }
+                if ($pluginState -notin @("armed", "applying")) {
+                    Invoke-PluginMaintenance "prepare" | Out-Null
+                }
+                # Preparation can take minutes. Capture intent immediately before
+                # the pause, not before downloads when the user could change it.
+                $initialStatus = Get-ServiceStatus
+                $queueWasRunning = ($null -ne $initialStatus -and [bool]$initialStatus.workerQueueRunning) -or (Get-ServiceQueueIntent)
+                $queueCount = if ($null -ne $initialStatus) { [int]$initialStatus.workerQueueCount } else { Get-PersistentQueueCount }
+            }
             if ($null -eq $initialStatus -and $initialListenerProcessId -and -not $Force) {
                 throw "The listener is not responding to status; use restart -Force after inspecting it"
             }
             $activeRecoveryState = New-RestartRecoveryState $initialListenerProcessId $queueWasRunning $queueCount
             Update-RecoveryState $activeRecoveryState "stopping_queue"
             Stop-QueueIfRunning $initialStatus
+            if ($Action -eq "plugin" -and $pluginState -notin @("armed", "applying")) {
+                Invoke-PluginMaintenance "arm" | Out-Null
+            }
             Update-RecoveryState $activeRecoveryState "stopping_service"
             if ($activeServiceMode -eq "windows-service" -and $null -ne $initialStatus) {
                 $stopped = [pscustomobject]@{
@@ -1176,7 +1219,9 @@ try {
                 $stopped = Stop-RunningService $initialStatus
                 $started = Start-ServiceProcess $activeRecoveryState
             }
+            if ($Action -eq "plugin") { Invoke-PluginMaintenance "verify" | Out-Null }
             $completed = Complete-Recovery $activeRecoveryState $started.Status
+            if ($Action -eq "plugin") { Invoke-PluginMaintenance "finish" | Out-Null }
             $activeRecoveryState = $null
             $finalStatus = $completed.Status
             Write-ControlLog "INFO" "Restart complete; old PID $($stopped.ServiceProcessId); new PID $($started.ServiceProcessId); queue_resumed=$($completed.QueueResumed)."
@@ -1205,6 +1250,10 @@ try {
 }
 catch {
     $actionError = $_.Exception.Message
+    if ($Action -eq "plugin" -and $OperationId -and $operationLockHeld) {
+        try { Invoke-PluginMaintenance "fail" | Out-Null }
+        catch { Write-ControlLog "ERROR" "Could not finalize plugin operation: $($_.Exception.Message)" }
+    }
     if ($operationLockHeld) {
         if ($null -ne $activeRecoveryState) {
             try {

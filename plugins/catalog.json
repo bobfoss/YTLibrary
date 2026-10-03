@@ -7,7 +7,40 @@
       "description": "Discover, search, and browse YouTube threads in which your account participates.",
       "distribution": "yt-comments",
       "repository_url": "https://github.com/bobfoss/yt-comments",
-      "releases": []
+      "releases": [
+        {
+          "version": "0.1.0",
+          "license": "GPL-3.0-or-later",
+          "requires_python": ">=3.11",
+          "dependencies": [],
+          "plugin_api_version": 2,
+          "browser_api_version": 2,
+          "required_host_features": [
+            "browser_collections_v1",
+            "my_activity_session_v1",
+            "unified_search_cards_v1",
+            "video_discovery_v1",
+            "video_facet_result_cards_v1",
+            "worker_followup_v1",
+            "youtube_next_session_v1"
+          ],
+          "tag": "v0.1.0",
+          "commit": "5be09bdd7752cd44204aba4db0d4d2d2499f5875",
+          "release_url": "https://github.com/bobfoss/yt-comments/releases/tag/v0.1.0",
+          "wheel": {
+            "filename": "yt_comments-0.1.0-py3-none-any.whl",
+            "size": 35337,
+            "sha256": "294301949112fc77574ee5095a0dc0939a58e34711226486227d2fab4c53b13a",
+            "url": "https://github.com/bobfoss/yt-comments/releases/download/v0.1.0/yt_comments-0.1.0-py3-none-any.whl"
+          },
+          "source": {
+            "filename": "yt_comments-0.1.0.tar.gz",
+            "size": 41622,
+            "sha256": "63e7e88f2dff6531ff36ba5e75dc46da046b42e418f7b61879011c1fa9ea7ecc",
+            "url": "https://github.com/bobfoss/yt-comments/releases/download/v0.1.0/yt_comments-0.1.0.tar.gz"
+          }
+        }
+      ]
     },
     {
       "id": "live_chat",
@@ -15,7 +48,35 @@
       "description": "Capture and browse recorded live chat from ended YouTube livestreams.",
       "distribution": "yt-live-chat",
       "repository_url": "https://github.com/bobfoss/yt-live-chat",
-      "releases": []
+      "releases": [
+        {
+          "version": "0.5.1",
+          "license": "GPL-3.0-or-later",
+          "requires_python": ">=3.11",
+          "dependencies": [],
+          "plugin_api_version": 2,
+          "browser_api_version": 2,
+          "required_host_features": [
+            "library_video_lookup_v1",
+            "youtube_ytdlp_v1"
+          ],
+          "tag": "v0.5.1",
+          "commit": "c10137fa8776c81f1b8d8ada6e1ee43f7ac24f22",
+          "release_url": "https://github.com/bobfoss/yt-live-chat/releases/tag/v0.5.1",
+          "wheel": {
+            "filename": "yt_live_chat-0.5.1-py3-none-any.whl",
+            "size": 36778,
+            "sha256": "7d1f129d33067b82bf80ba8875e3057794f2374cb3166acf8d6ef9bc0631724d",
+            "url": "https://github.com/bobfoss/yt-live-chat/releases/download/v0.5.1/yt_live_chat-0.5.1-py3-none-any.whl"
+          },
+          "source": {
+            "filename": "yt_live_chat-0.5.1.tar.gz",
+            "size": 41982,
+            "sha256": "c9ad8d8b5f1c3b9cccc9229a1d657adab35c2760c254ac73430ca30b17da9edc",
+            "url": "https://github.com/bobfoss/yt-live-chat/releases/download/v0.5.1/yt_live_chat-0.5.1.tar.gz"
+          }
+        }
+      ]
     },
     {
       "id": "pockettube",
@@ -23,7 +84,32 @@
       "description": "Import PocketTube exports to organize playlists and channels into groups.",
       "distribution": "yt-pockettube",
       "repository_url": "https://github.com/bobfoss/yt-pockettube",
-      "releases": []
+      "releases": [
+        {
+          "version": "0.6.1",
+          "license": "GPL-3.0-or-later",
+          "requires_python": ">=3.12",
+          "dependencies": [],
+          "plugin_api_version": 2,
+          "browser_api_version": null,
+          "required_host_features": [],
+          "tag": "v0.6.1",
+          "commit": "d8254ca6aaeb206875cd08016968bb30866c58ab",
+          "release_url": "https://github.com/bobfoss/yt-pockettube/releases/tag/v0.6.1",
+          "wheel": {
+            "filename": "yt_pockettube-0.6.1-py3-none-any.whl",
+            "size": 34805,
+            "sha256": "74709fb7ed6310267f866dfc2ffd8d6c56f6ea015e6bade38bfa0560a584a4c5",
+            "url": "https://github.com/bobfoss/yt-pockettube/releases/download/v0.6.1/yt_pockettube-0.6.1-py3-none-any.whl"
+          },
+          "source": {
+            "filename": "yt_pockettube-0.6.1.tar.gz",
+            "size": 38541,
+            "sha256": "6c458a921ba3ffe6594cf7bb9e4f1d6496cfabac351bb264348f9f16cfe10d06",
+            "url": "https://github.com/bobfoss/yt-pockettube/releases/download/v0.6.1/yt_pockettube-0.6.1.tar.gz"
+          }
+        }
+      ]
     },
     {
       "id": "subtitles",
@@ -31,7 +117,36 @@
       "description": "Capture, browse, and search video subtitles and clip transcripts.",
       "distribution": "yt-subtitles",
       "repository_url": "https://github.com/bobfoss/yt-subtitles",
-      "releases": []
+      "releases": [
+        {
+          "version": "0.13.3",
+          "license": "GPL-3.0-or-later",
+          "requires_python": ">=3.12",
+          "dependencies": [
+            "yt-dlp[curl-cffi,default]>=2026.7.4"
+          ],
+          "plugin_api_version": 2,
+          "browser_api_version": 2,
+          "required_host_features": [
+            "library_video_lookup_v1"
+          ],
+          "tag": "v0.13.3",
+          "commit": "175b395a95cec68179a4f998fbb7e8f394be0e29",
+          "release_url": "https://github.com/bobfoss/yt-subtitles/releases/tag/v0.13.3",
+          "wheel": {
+            "filename": "yt_subtitles-0.13.3-py3-none-any.whl",
+            "size": 57005,
+            "sha256": "0f0b650714cb490110749b974707309ecec86b13fa321ac99e4c3ca3087a3438",
+            "url": "https://github.com/bobfoss/yt-subtitles/releases/download/v0.13.3/yt_subtitles-0.13.3-py3-none-any.whl"
+          },
+          "source": {
+            "filename": "yt_subtitles-0.13.3.tar.gz",
+            "size": 65698,
+            "sha256": "9cc99ef1538117f6c5533de0051d891d9be56908eec0d26c00ebfd6124d86e0e",
+            "url": "https://github.com/bobfoss/yt-subtitles/releases/download/v0.13.3/yt_subtitles-0.13.3.tar.gz"
+          }
+        }
+      ]
     },
     {
       "id": "llm",
@@ -39,7 +154,35 @@
       "description": "Ask questions about eligible videos using YouTube's native Ask AI experience.",
       "distribution": "yt-llm",
       "repository_url": "https://github.com/bobfoss/yt-llm",
-      "releases": []
+      "releases": [
+        {
+          "version": "0.2.2",
+          "license": "GPL-3.0-or-later",
+          "requires_python": ">=3.12",
+          "dependencies": [],
+          "plugin_api_version": 2,
+          "browser_api_version": 2,
+          "required_host_features": [
+            "plugin_json_mutations_v1",
+            "youtube_watch_session_v1"
+          ],
+          "tag": "v0.2.2",
+          "commit": "7b8073eb13f8a66c3b8c552d18e2afc7a40659e0",
+          "release_url": "https://github.com/bobfoss/yt-llm/releases/tag/v0.2.2",
+          "wheel": {
+            "filename": "yt_llm-0.2.2-py3-none-any.whl",
+            "size": 32315,
+            "sha256": "ef80873a2ff4a31dcaadb9eee0a78b6734d76c0d7c0031072f5011f44fff7fcb",
+            "url": "https://github.com/bobfoss/yt-llm/releases/download/v0.2.2/yt_llm-0.2.2-py3-none-any.whl"
+          },
+          "source": {
+            "filename": "yt_llm-0.2.2.tar.gz",
+            "size": 35282,
+            "sha256": "9cdad194671119317ca72a023eff5046d36220796a440cce4519c39603532955",
+            "url": "https://github.com/bobfoss/yt-llm/releases/download/v0.2.2/yt_llm-0.2.2.tar.gz"
+          }
+        }
+      ]
     }
   ]
 }

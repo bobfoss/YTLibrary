@@ -12,7 +12,8 @@ import subprocess
 import sys
 import tempfile
 
-from plugin_packages import inspect_wheel
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from yt_library.plugin_packages import inspect_wheel  # noqa: E402
 
 
 PROBE = r'''

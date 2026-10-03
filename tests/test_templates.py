@@ -235,7 +235,7 @@ class TemplateDomTests(unittest.TestCase):
         }
         self.assertEqual(
             admin_script_sources,
-            {"/theme.js", "/admin-transport.js", "/admin.js"},
+            {"/theme.js", "/admin-transport.js", "/admin.js", "/admin-plugin-packages.js"},
         )
         self.assertLess(
             admin_scripts.index("/admin-transport.js"),

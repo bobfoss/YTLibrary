@@ -3,7 +3,17 @@
 
 from __future__ import annotations
 
-from yt_library.cli import main
+def main() -> int | None:
+    import sys
+
+    # Maintenance must finish before cli imports server and discovers plugins.
+    if len(sys.argv) == 1 or sys.argv[1] == "serve":
+        from yt_library.plugin_installation import Installer
+
+        Installer().bootstrap()
+    from yt_library.cli import main as cli_main
+
+    return cli_main()
 
 
 if __name__ == "__main__":

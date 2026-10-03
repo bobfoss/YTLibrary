@@ -27,3 +27,5 @@ YouTube and YouTube Music/
 .agents/
 .codex-remote-attachments/
 runtime_logs/
+.plugin-manager/
+plugin-data/

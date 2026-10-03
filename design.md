@@ -339,122 +339,94 @@ ID-shaped `id`, a nonempty `label`, a nonnegative integer `value`, and a
 text. The host owns number and byte formatting, and metrics never grant the
 plugin access to Admin DOM.
 
-### Planned plugin distribution and management
+### Plugin distribution and management
 
-Status: packaging/preflight foundation implemented; maintenance and Admin
-installation remain planned. The current application still uses manually
-installed Python packages and the existing enable/disable controls.
-`plugins/catalog.json` lists the five published plugin repositories. Empty
-`releases` means there is no catalog-approved installable release yet. YT Download
-is design-only and is not advertised as an installable plugin.
+The five implemented plugins have versioned GitHub Releases containing an exact
+wheel, source tarball, and checksum/commit metadata. `plugins/catalog.json`
+selects approved immutable releases; YT Download remains design-only. All five
+and YTL are licensed `GPL-3.0-or-later`.
 
-YTL and all five implemented plugins are licensed `GPL-3.0-or-later`. Each
-plugin wheel now includes a plugin-owned `ytl-plugin.json` (schema version 1)
-beside its Python package. It declares `id`, `plugin_api_version`, nullable
-`browser_api_version` (null for no browser assets), sorted
-`required_host_features`, and an opaque `config_template` object. An explicit
-external config file initialized from that object supports first-run startup
-without teaching core any plugin configuration keys or database schema.
+Each wheel carries `ytl-plugin.json` schema 1 beside its Python package: plugin
+ID, Python API version, nullable browser API version, sorted required host
+features, and an opaque first-run `config_template`. Core never interprets a
+plugin's configuration keys or database schema.
 
-Implemented maintainer tooling:
+`yt_library/plugin_packages.py` owns catalog and artifact validation, metadata-only
+inventory, compatibility checks, downloads, and non-mutating dependency planning.
+The existing `scripts/plugin_packages.py` remains its CLI shim.
+`scripts/build_plugin_release.py` builds candidates from clean Git archives;
+`scripts/smoke_plugin_wheel.py` executes a trusted wheel with fresh external
+configuration and verifies entry points, declarations, and assets. Only publish
+tested bytes against their exact source commit, then download and verify the
+published hashes before updating the catalog. CI publication automation remains
+deferred; the first releases were published with this verified manual procedure.
 
-- `scripts/build_plugin_release.py` builds wheel/sdist candidates from a clean
-  Git archive, rejects common tracked runtime artifacts, inspects the wheel,
-  and generates exact-commit/checksum release records. It does not publish or
-  approve them. `scripts/smoke_plugin_wheel.py` deliberately executes a trusted
-  wheel from a temporary install target with fresh external config/data, checks
-  its declarations against the factory, and verifies package files stay intact.
-- `scripts/plugin_packages.py` validates the source/release catalog, reads
-  installed distribution metadata without importing plugin factories, verifies
-  wheel size/hash/identity/license/API/feature declarations, and rejects unsafe
-  archive paths, startup `.pth` hooks, and wheel `.data` installs. Matching a
-  checksum authenticates bytes relative to the catalog, not arbitrary code.
-- `prepare` protects editable and unknown-origin installs, checks compatibility
-  before download, accepts exact catalog selections only, and stages a verified
-  wheel plus pip's wheel-only dry-run plan. Resolution includes core and other
-  plugins' requirements/extras and pins all existing distributions except the
-  requested plugin. Existing-version conflicts fail instead of upgrading the
-  environment. The plan records the environment and rejects changes observed
-  during preparation. No package/config/service mutations occur.
-- These tools currently require development dependencies `build` and
-  `packaging`. They are not loaded by the running host. The configured proxy is
-  honored; SOCKS builds prefetch backend wheels before offline build isolation.
-  A pip 26.2 SOCKS adapter incompatibility uses pip's documented certifi-only
-  mode for that version/transport, with certificate verification still enabled.
+Validation checks exact catalog repository/tag URLs, size, SHA-256, identity,
+license, Python/platform support, both plugin APIs, host features, and dependency
+metadata. It rejects unsafe plugin archive paths, startup hooks, and wheel data
+installs. A matching checksum establishes consistency with the trusted catalog,
+not a sandbox or independent publisher signature. Plugins execute with YTL's
+permissions. Package endpoints require bounded JSON, same-origin requests, an
+Admin header and process-specific nonce; they accept catalog IDs/versions and
+expected installed versions, never arbitrary URLs, paths, or pip arguments.
 
-The prepared plan is not a ready-to-apply transaction: dependency wheels,
-operation persistence, current-environment revalidation, coordinated service
-maintenance, rollback policy, catalog refresh/cache, and Admin controls are
-still required. Local candidates are not added to the bundled catalog before
-their exact tag/commit and assets are published and independently verified.
+Advanced Admin's existing plugin panel displays available and installed packages,
+versions, source links/paths, runtime state, release notes, compatibility reasons,
+and Install/Update/Enable/Disable/Remove controls. Installation defaults to
+disabled. Editable and unknown-origin installations cannot be updated or removed;
+their enabled state can still be managed. Unlisted plugins remain manual.
+The bundled catalog is merged with a cached copy refreshed explicitly from YTL's
+fixed GitHub URL. Conflicting immutable releases/identities are rejected; refresh
+failure leaves the previous valid catalog. There are no automatic code updates.
 
-Use a Python wheel as the installation artifact, attached to a versioned GitHub
-Release in each plugin repository. Also publish a source distribution (`.tar.gz`)
-for source consumers. A wheel contains the package, entry-point metadata, browser
-assets, and required SQL files and installs without building from source. Build
-and test artifacts from a tagged checkout in CI; check package contents and
-installed entry-point loading before publishing. The catalog should select
-explicit releases, never a moving branch or an unchecked GitHub latest link.
+`yt_library/plugin_installation.py` owns durable operation state and offline
+application. Windows Admin launches `scripts/service.ps1 plugin -OperationId ID`
+detached from the HTTP process. The existing global controller mutex covers the
+entire operation, including contention with other chats and service actions:
 
-Keep the catalog in YTL initially, with a bundled copy and a cached remote copy
-from the same maintained repository. A release record should supply the version,
-tag, commit, release-notes URL, exact wheel URL, byte size, SHA-256, Python version
-requirement, Python/browser API versions, and required host features. Generate
-package identity and dependency metadata from the built artifact. Match these
-against the wheel and installed host before offering installation. A checksum
-checks bytes against the trusted catalog; it is not an independent publisher
-signature. Catalog refresh failure must leave the last valid catalog usable.
+1. Prepare while the old service remains online. Resolve core and all installed
+   plugins' requirements/extras with every existing dependency version pinned.
+   Accept wheels only, download new dependencies from PyPI, and verify hashes.
+   Include Subtitles' curl-cffi extra. Fetch the exact approved prior wheel before
+   an update; refuse updates without a rollback artifact.
+2. Record the environment, reject stale installed selections, pause mutations and
+   dispatch, then capture current queue intent and stop workers through the
+   controller's existing graceful-stop path. Interrupted queue work remains queued.
+3. Arm the operation and restart through the existing SCM-child replacement or
+   direct-process path. The compatibility CLI shim applies maintenance before
+   importing the CLI/server or any plugins; the old plugin process has exited.
+   Revalidate the environment and staged hashes, disable the affected plugin, and
+   run bounded offline pip with explicit arguments, no dependency resolution,
+   and hash-required wheel installation.
+4. Persist the requested activation state, boot normally, verify installed identity
+   and service/plugin status, restore prior queue intent, and finalize the operation.
+   The SCM supervisor needs no new protocol or privileged restart.
 
-Advanced Admin should show Installed and Available lists with a short description,
-source link, installed/latest compatible version, status, and an appropriate
-Install, Update, Enable/Disable, or Remove action. Explain missing compatibility
-features or required configuration on the affected plugin. Installing and enabling
-remain separate states; an explicit Install and enable action may combine them.
-Represent editable checkouts as Development installs, with their source path;
-ordinary package updates must not replace them. Keep the interaction in the
-existing generic plugin panel, driven by catalog and plugin declarations.
+Progress survives page/service reloads in ignored `.plugin-manager/`. Admin
+rejects overlapping actions and provides controller reconnection for interrupted
+queued/prepared/verification phases. An interrupted applying phase is not replayed;
+next startup disables the target and reports manual inspection required.
+Controller failures retain normal service recovery information; `service.ps1 start`
+can restore pending queue intent. Automatic maintenance currently requires Windows,
+PowerShell 7, and the project's `.venv`; other platforms use manual installation.
 
-Run package operations through one serialized maintenance controller. Download
-and validate the selected artifacts before stopping work; drain workers, preserve
-queue intent, replace packages while the YTL child process is stopped, then start
-and verify status. Windows must use `scripts/service.ps1` and its persistent host
-protocol, extended with a maintenance operation rather than a second lifecycle
-implementation. Show progress and operation errors in Admin. Reject overlapping
-operations and stale version selections. Mutating HTTP requests must enforce
-same-origin/CSRF checks and accept catalog IDs and versions, never arbitrary pip
-arguments, paths, or untrusted package URLs.
+New config/data live outside packages in `plugin-data/<id>/`, configurable via
+`plugin_data_directory`. Existing paths and config content are preserved. Removal
+uninstalls only code, never plugin databases/configuration or shared dependencies.
+Core does not open plugin databases. Package-operation/config folders are excluded
+from generic HTTP file serving and Git.
 
-Initially install into YTL's existing virtual environment using pip as a
-subprocess with explicit arguments. Resolve dependencies before maintenance and
-require wheels, including for dependencies. Evaluate changes against the host
-and every installed plugin: an incompatible dependency must produce an actionable
-error rather than silently upgrading or downgrading the host. YT Subtitles
-currently requires the `curl-cffi` yt-dlp extra, which is absent from core's
-declared requirements; this must be included in dependency planning. Dedicated
-environments would require a different out-of-process plugin contract, so they
-are a separate future architecture decision.
+A failed replacement may reinstall the prior wheel before activation; new
+dependencies are conservatively retained. No plugin database has been opened by
+the new code at that point. Startup/health failure is reported without pretending
+that package rollback can undo a plugin database migration. Inspect runtime status
+and disable a faulty plugin; explicit data recovery remains plugin-owned.
 
-For new managed installs, keep plugin configuration, databases, and captures
-outside installed package directories, under a configurable data root such as
-`plugin-data/<plugin-id>/`. Pass the explicit plugin config path through the
-existing host contract; keep all plugin schemas and configuration semantics
-plugin-owned. Preserve existing configured paths. A generic, plugin-declared
-first-run config template is needed where a plugin cannot bootstrap itself:
-PocketTube currently requires an existing JSON config, and Subtitles' fallback
-config path is relative to its installed package. Removal should uninstall code
-while retaining data and configuration; deleting data is a separate operation.
-Package rollback alone cannot undo plugin database migrations. Retain the prior
-wheel, but promise automatic rollback only when the plugin's data compatibility
-or a coordinated backup/restore supports it.
-
-Remaining implementation sequence: automate verified tag builds/publication in
-CI and approve releases; complete dependency-wheel staging; add the maintenance
-controller and operation persistence; then expose the installer in Advanced
-Admin. Licenses, local wheel/sdist builds, fresh-config wheel smoke tests, catalog
-validation, and non-mutating preflight are in place. Test with generic fixture
-plugins, preserving the optional-plugin boundary, and verify complete
-install/update/failure/removal on a fresh YTL environment as well as an existing
-editable development setup before enabling live package actions.
+Maintainer builds need `build`; runtime validation needs `packaging`. All outbound
+downloads/resolution honor the configured proxy. pip 26.2's SOCKS compatibility
+workaround uses documented certifi-only mode, never disabled certificate checking.
+Lifecycle checks use disposable environments, generic failure fixtures, and
+published package installs without replacing editable development checkouts.
 
 ### Python plugin object
 

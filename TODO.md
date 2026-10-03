@@ -258,17 +258,14 @@ The left-navigation library lists are named omni-search presets. Search returns 
 - Persist scheduled Update last-run and failure status across service restarts; the daily schedule and next-run status are available now.
 - Make parent-child relationships in hierarchical filters more visually obvious, including enabled, disabled, selected, and partially selected states.
 - Begin publishing versioned releases through GitHub with a defined versioning and release process.
-- Implement plugin distribution and management using the proposal in `design.md`.
-  The five implemented plugin repositories are published and listed in
-  `plugins/catalog.json`; the catalog currently has no approved release artifacts.
-  GPL-3.0-or-later licensing, clean-commit wheel/sdist candidate builds,
-  plugin-owned first-run templates, wheel startup smoke tests, catalog/checksum
-  and compatibility validation, protected editable inventory, and non-mutating
-  dependency preflight are implemented in the packaging scripts. Next: CI/tag
-  publication and approved releases, dependency-wheel staging and environment
-  revalidation, a serialized maintenance controller with durable operations,
-  and Advanced Admin install/update/remove controls. Test full lifecycle and
-  failure recovery on a fresh environment; preserve data and editable installs.
+- Automate plugin release builds/publication in CI and define catalog review and
+  release-retention policy. Five initial verified wheel/sdist releases are now
+  approved in `plugins/catalog.json`; Windows Advanced Admin supports install,
+  update, enable/disable, and code-only removal through serialized service
+  maintenance. Editable installs and plugin data remain protected. Further work:
+  bounded cleanup of old local operation artifacts, cross-platform maintenance,
+  and plugin-owned database backup/rollback policies (package rollback alone
+  cannot undo migrations). See `design.md` for the implemented lifecycle.
 - Maintain a changelog for each released version that summarizes user-facing changes, fixes, schema impact, and operational notes.
 - Package YT Library as a supported Docker image and add a documented Docker
   Compose and CI workflow covering first-run initialization, schema upgrades,

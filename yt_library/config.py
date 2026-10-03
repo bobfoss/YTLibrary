@@ -58,6 +58,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "update_time": "03:00",
     "admin_advanced": False,
     "plugins": {},
+    "plugin_data_directory": "plugin-data",
     "use_proxy": False,
     "proxy": "",
     "dispatch_mode": "delay",
