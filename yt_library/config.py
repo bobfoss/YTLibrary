@@ -96,6 +96,7 @@ PLAYLIST_VIDEO_SORTS = frozenset(
 SEARCH_SORT_CONTEXTS = frozenset(
     {
         "search",
+        "meta",
         "videos",
         "playlisted",
         "liked",

@@ -45,6 +45,7 @@ PLUGIN_HOST_FEATURES = frozenset(
         "video_discovery_v1",
         "video_facet_result_cards_v1",
         "unified_search_cards_v1",
+        "browser_collections_v1",
     }
 )
 PLUGIN_ENTRY_POINT_GROUP = "yt_library.plugins"
@@ -620,6 +621,17 @@ def _browser_assets(instance: Any) -> list[dict[str, str]]:
     if assets and not callable(getattr(instance, "handle_browser_asset", None)):
         raise TypeError("Plugin browser assets require handle_browser_asset")
     return assets
+
+
+def _browser_collection(plugin_id: str, instance: Any) -> dict[str, str] | None:
+    value = getattr(instance, "browser_collection", None)
+    if value is None:
+        return None
+    if not isinstance(value, dict) or not str(value.get("label") or "").strip():
+        raise ValueError("Plugin browser collection requires a label")
+    if plugin_id in {"search", "videos", "clips", "playlists", "channels", "history", "admin", "api", "plugins"}:
+        raise ValueError("Plugin browser collection conflicts with a host route")
+    return {"path": f"/{plugin_id}", "label": str(value["label"]).strip()}
 
 
 def _asset_error(message: str) -> bytes:
@@ -1347,6 +1359,7 @@ class PluginManager:
                     "project_channel_groups"
                 )
             _browser_assets(instance)
+            _browser_collection(record.plugin_id, instance)
             _worker_processes(instance)
             context = PluginContext(
                 root=Path(__file__).resolve().parent.parent,
@@ -1395,6 +1408,9 @@ class PluginManager:
         browser_assets = _browser_assets(instance)
         if browser_assets:
             payload["browserAssets"] = browser_assets
+        collection = _browser_collection(record.plugin_id, instance)
+        if collection:
+            payload["browserCollection"] = collection
         worker_processes = _worker_processes(instance)
         if worker_processes:
             payload["workerProcesses"] = self._worker_process_statuses(
@@ -1417,6 +1433,15 @@ class PluginManager:
 
     def statuses(self) -> list[dict[str, Any]]:
         return [self._record_status(record) for record in self._records.values()]
+
+    def has_browser_collection(self, path: str) -> bool:
+        path = path.rstrip("/")
+        record = self._records.get(path.removeprefix("/"))
+        return bool(
+            record and record.configured.get("enabled") is True
+            and record.state == "loaded" and record.instance is not None
+            and _browser_collection(record.plugin_id, record.instance)
+        )
 
     def _worker_process_statuses(
         self,

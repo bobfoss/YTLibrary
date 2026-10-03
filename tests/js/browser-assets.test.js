@@ -385,7 +385,7 @@ test('history keeps search fields focused on occurrence results without showing 
   assert.match(indexHtml, /\.filters\[hidden\] \{ display: none; \}/);
   assert.match(
     indexSource,
-    /function syncSearchFiltersForSelection\(\)[\s\S]{0,180}searchFilters\.hidden = false[\s\S]{0,80}searchFilterTree\.hidden = historySelected/,
+    /function syncSearchFiltersForSelection\(\)[\s\S]{0,600}searchFilters\.hidden = false[\s\S]{0,80}searchFilterTree\.hidden = historySelected/,
   );
   assert.match(
     indexSource,
@@ -393,7 +393,7 @@ test('history keeps search fields focused on occurrence results without showing 
   );
   assert.match(
     indexSource,
-    /search\.addEventListener\('input'[\s\S]{0,220}selected === '__history__'[\s\S]{0,260}updateCurrentUrl\(true\)[\s\S]{0,180}void render\(\)/,
+    /search\.addEventListener\('input'[\s\S]{0,600}selected === '__history__'[\s\S]{0,260}updateCurrentUrl\(true\)[\s\S]{0,180}void render\(\)/,
   );
   assert.match(
     indexSource,
@@ -506,7 +506,7 @@ test('foreground loads share the app loading status lifecycle', () => {
   );
   assert.match(
     indexSource,
-    /if \(selected !== '__search__' && !selected\.startsWith\('__playlist__:'\)\) \{\s*searchResultsRendered = false;\s*stopSearchMetaProgress\(\);/,
+    /if \(selected !== '__search__' && !collection && !selected\.startsWith\('__playlist__:'\)\) \{\s*searchResultsRendered = false;\s*stopSearchMetaProgress\(\);/,
   );
   assert.equal(
     (playlistSource.match(/stopSearchFilterProgress\(\);/g) || []).length,

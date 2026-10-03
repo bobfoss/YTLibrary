@@ -1246,6 +1246,8 @@ class AdminServerTests(unittest.TestCase):
 
     def test_browser_page_routes_serve_the_application_shell(self) -> None:
         handler = object.__new__(server.LibraryHandler)
+        handler.plugin_manager = Mock()
+        handler.plugin_manager.has_browser_collection.return_value = False
         handler.render_page = Mock(return_value=b"browser shell")
         handler._send_bytes = Mock()
 

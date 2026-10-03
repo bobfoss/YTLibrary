@@ -1044,7 +1044,7 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
             return True
         shell_paths = {"/", "/index.html", "/search", "/videos", "/playlists", "/channels", "/clips", "/history"}
         shell_prefixes = ("/videos/", "/playlists/", "/channels/", "/clips/")
-        if path in shell_paths or path.startswith(shell_prefixes):
+        if path in shell_paths or path.startswith(shell_prefixes) or self.plugin_manager.has_browser_collection(path):
             self._send_bytes(
                 self.render_page(INDEX_HTML),
                 "text/html; charset=utf-8",

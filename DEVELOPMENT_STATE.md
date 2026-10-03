@@ -161,6 +161,15 @@ facts, transient PIDs, or other runtime-only data here.
   cards into native sorting and pagination. Providers return lightweight video-bound
   descriptors, then hydrate only the selected page. Video facets apply before
   pagination; dynamic Most liked is offered only when matching plugin cards exist.
+- The additive `browser_collections_v1` contract lets a plugin declare
+  `browser_collection = {"label": "..."}` and a browser `collection.fetch`
+  provider. Its `/<plugin-id>` shell route and Meta sidebar link appear only
+  while enabled. Meta sits between Videos and Playlists. Collection pages reuse
+  search cards, pagination, query URLs, and the main sort control, with a saved
+  `meta` sort context; they bypass native/search-field filters and hide those
+  controls. YT Comments uses `/comments` to browse participating threads even
+  with a blank query. Blank global search still omits comment cards. All
+  collection data access remains in the plugin; no schema migration is needed.
 - Plugin search can enrich canonical videos and clips, project bounded virtual
   videos, decorate native entity cards, add scoped channel-video tabs, and
   plan work through the host contract. It must not couple core queries or

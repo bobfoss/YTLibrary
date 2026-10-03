@@ -238,6 +238,7 @@ window.YTLibraryBrowserPlugins = Object.freeze({
     pluginJsonMutations: 1,
     searchResultPresentations: 1,
     unifiedSearchCards: 1,
+    browserCollections: 1,
   }),
   register: registerBrowserPlugin,
 });
@@ -254,6 +255,24 @@ function browserPluginSupports(pluginId, capability) {
     && status.state === 'ready'
     && (!capability || (status.capabilities || []).includes(capability))
   );
+}
+
+function browserCollectionPlugins() {
+  return browserSearchPlugins().filter(plugin => (
+    browserPluginStatus(plugin.id)?.browserCollection
+    && typeof plugin.collection?.fetch === 'function'
+  ));
+}
+
+function activeBrowserCollection() {
+  return browserCollectionPlugins().find(plugin => selected === `__collection__:${plugin.id}`) || null;
+}
+
+function browserCollectionUrl(plugin, includePagination = true) {
+  const params = includePagination ? paginationParams() : new URLSearchParams();
+  if (search.value.trim()) params.set('q', search.value.trim());
+  params.set('sort', searchResultsSort);
+  return appendUrlParams(browserPluginStatus(plugin.id).browserCollection.path, params);
 }
 
 function browserChannelVideoTabKey(pluginId, tabId) {
@@ -1165,6 +1184,8 @@ function channelDetailTabFromParams(params) {
 
 function localViewHref(value, includePagination = false) {
   if (value === '__search__') return searchUrl();
+  const collection = activeBrowserCollection();
+  if (collection && value === selected) return browserCollectionUrl(collection, includePagination);
   if (value !== '__history__') {
     return includePagination ? appendUrlParams('/search', paginationParams()) : '/search';
   }
@@ -1847,6 +1868,11 @@ function updateCurrentUrl(replace = false) {
 }
 
 function syncSearchUrlAndRender(replaceUrl = true) {
+  if (activeBrowserCollection()) {
+    updateCurrentUrl(replaceUrl);
+    render();
+    return;
+  }
   if (selected === '__search__') {
     const urlChanged = updateSearchUrl(replaceUrl);
     syncSidebarSelection();
@@ -1858,6 +1884,18 @@ function syncSearchUrlAndRender(replaceUrl = true) {
 function selectionFromLocation() {
   const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
   const params = new URLSearchParams(window.location.search);
+  const collection = browserCollectionPlugins().find(plugin => (
+    browserPluginStatus(plugin.id).browserCollection.path === pathname
+  ));
+  if (collection) {
+    search.value = params.get('q') || '';
+    applyPaginationParams(params);
+    const sorts = collection.collection.sorts || ['newest', 'oldest'];
+    const requestedSort = params.get('sort') || sortPreferences.meta;
+    searchResultsSort = sorts.includes(requestedSort) ? requestedSort : sorts[0];
+    searchSortExplicit = params.has('sort');
+    return `__collection__:${collection.id}`;
+  }
   if (['/', '/search', '/videos', '/clips', '/playlists', '/channels'].includes(pathname)) {
     applySearchLocation(pathname, params);
     return '__search__';
@@ -4255,6 +4293,13 @@ function toggleSearchFilterTreeNode(nodeId) {
 }
 
 function syncSearchFiltersForSelection() {
+  const collection = activeBrowserCollection();
+  if (collection) {
+    searchFilters.hidden = true;
+    searchFilterTree.hidden = true;
+    search.placeholder = `Search ${browserPluginStatus(collection.id).browserCollection.label.toLowerCase()}`;
+    return;
+  }
   const historySelected = selected === '__history__';
   const contextKind = searchContextKind();
   const alreadyHidden = searchFilterTree.hidden;
@@ -4300,7 +4345,7 @@ function pluginSearchSortOptions(counts = {}) {
   ));
 }
 
-function searchResultsSortHtml(pluginCounts = {}) {
+function searchResultsSortHtml(pluginCounts = {}, allowedSorts = null) {
   const options = [
     ['relevance', 'Relevance'],
     ['title', 'Title A-Z'],
@@ -4316,7 +4361,7 @@ function searchResultsSortHtml(pluginCounts = {}) {
   return `
     <label class="view-sort">Sort
       <select data-search-sort>
-        ${options.map(([optionValue, label]) => `<option value="${escapeHtml(optionValue)}" ${searchResultsSort === optionValue ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}
+        ${options.filter(([value]) => !allowedSorts || allowedSorts.includes(value)).map(([optionValue, label]) => `<option value="${escapeHtml(optionValue)}" ${searchResultsSort === optionValue ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}
       </select>
     </label>
   `;
@@ -4373,6 +4418,7 @@ function cardLayoutFor(context) {
 }
 
 function activeCardLayoutContext() {
+  if (activeBrowserCollection()) return 'search';
   if (selected === '__search__') return 'search';
   if (selected === '__history__') return 'history';
   if (selected.startsWith('__playlist__:')) return 'playlist';
@@ -4869,6 +4915,18 @@ async function fetchOmniSearch(query, page = currentPage) {
   const limit = Number.isFinite(size) ? size : 5000;
   const requestedPage = Math.max(1, Number(page) || 1);
   const offset = (requestedPage - 1) * limit;
+  const collection = activeBrowserCollection();
+  if (collection) {
+    const payload = await collection.collection.fetch(
+      { query, limit, offset, sort: searchResultsSort },
+      browserPluginHost(collection.id),
+    );
+    return {
+      ...payload,
+      counts: { plugins: { [collection.id]: payload.total } },
+      results: (payload.results || []).map(item => ({ kind: 'plugin', pluginId: collection.id, item })),
+    };
+  }
   const searchFieldsValue = searchFieldParamValue() || '__none__';
   const kindsValue = selectedSearchResultKinds().join(',') || '__none__';
   const metaCountsKey = JSON.stringify([
@@ -5638,6 +5696,7 @@ function searchFilterMount(kind, navigationSection) {
 }
 
 function appendSearchFilterCategory(container, kind, label, count) {
+  if (activeBrowserCollection()) return;
   const contextKind = searchContextKind();
   const filtersVisible = selected !== '__history__' && (!contextKind || contextKind === kind);
   if (!filtersVisible) return;
@@ -5670,6 +5729,7 @@ function appendSearchFilterCategory(container, kind, label, count) {
 }
 
 function appendPluginSearchFilters(container) {
+  if (activeBrowserCollection()) return;
   const plugins = browserResultSearchPlugins();
   if (!plugins.length || selected === '__history__' || searchContextKind()) return;
   for (const plugin of plugins) {
@@ -5770,6 +5830,23 @@ function renderGroups() {
     );
   }
 
+  const collections = browserCollectionPlugins();
+  if (collections.length) {
+    const metaSection = sectionFor('Meta');
+    for (const plugin of collections) {
+      const definition = browserPluginStatus(plugin.id).browserCollection;
+      const link = document.createElement('a');
+      link.className = 'group';
+      link.href = definition.path;
+      link.dataset.key = `__collection__:${plugin.id}`;
+      link.innerHTML = `<span>${escapeHtml(definition.label)}</span><span class="count">${filterCountText(plugin.search.catalogCount?.(browserPluginStatus(plugin.id)))}</span>`;
+      link.addEventListener('click', event => {
+        handleSidebarLinkClick(event, () => setBrowserUrl(definition.path));
+      });
+      metaSection.appendChild(link);
+    }
+  }
+
   const playlistSection = sectionFor('Playlists');
   playlistSection.appendChild(presetLink('playlists', 'Playlists', counts.playlists || 0));
   appendSearchFilterCategory(
@@ -5802,7 +5879,7 @@ function renderGroups() {
     channelChildren,
   );
   appendPluginSearchFilters(searchFilterTree);
-  renderSearchMetaFilters(renderedSearchFilterPayload);
+  if (!activeBrowserCollection()) renderSearchMetaFilters(renderedSearchFilterPayload);
   syncSidebarSelection();
 }
 
@@ -6182,9 +6259,10 @@ document.addEventListener('submit', async event => {
 
 async function renderCurrentView() {
   const generation = ++renderGeneration;
+  const collection = activeBrowserCollection();
   cancelAdjacentPagePrefetch();
   setDocumentTitle();
-  if (selected !== '__search__' && !selected.startsWith('__playlist__:')) {
+  if (selected !== '__search__' && !collection && !selected.startsWith('__playlist__:')) {
     searchResultsRendered = false;
     stopSearchMetaProgress();
   }
@@ -6214,7 +6292,8 @@ async function renderCurrentView() {
     renderedChannelCard?.dataset.channelReference === selectedChannelReference
   );
   const preserveRemotePager = !bottomPager.hidden && (
-    (selected === '__search__' && omniSearchCache.size > 0)
+    collection
+    || (selected === '__search__' && omniSearchCache.size > 0)
     || (selected !== '__search__' && viewDataCache.size > 0)
   );
   if (!preserveHistoryChrome && !preserveRemotePager) {
@@ -6647,9 +6726,9 @@ async function renderCurrentView() {
     }
     return;
   }
-  if (selected === '__search__') {
+  if (selected === '__search__' || collection) {
     const preserveSearchContent = (
-      renderedOmniSearchQuery === query
+      (collection || renderedOmniSearchQuery === query)
       && searchResultsRendered
     );
     if (preserveSearchContent) {
@@ -6657,7 +6736,7 @@ async function renderCurrentView() {
     } else {
       title.textContent = '';
       meta.textContent = '';
-      renderSearchMetaFilters();
+      if (!collection) renderSearchMetaFilters();
       showSearchProgress();
       await new Promise(resolve => requestAnimationFrame(resolve));
       if (generation !== renderGeneration) return;
@@ -6678,7 +6757,7 @@ async function renderCurrentView() {
     if (generation !== renderGeneration) return;
     if (searchResultsSort === 'most_liked'
       && !pluginSearchSortOptions(payload.counts?.plugins).some(option => option.value === searchResultsSort)) {
-      searchResultsSort = defaultSearchResultsSort(query);
+      searchResultsSort = collection ? 'newest' : defaultSearchResultsSort(query);
       searchSortExplicit = false;
       syncSearchUrlAndRender();
       return;
@@ -6699,14 +6778,15 @@ async function renderCurrentView() {
     currentPage = Math.floor(Number(payload.offset || 0) / remoteLimit) + 1;
     renderedOmniSearchQuery = query;
     searchResultsRendered = true;
-    title.textContent = '';
+    title.textContent = collection ? browserPluginStatus(collection.id).browserCollection.label : '';
+    if (collection) setDocumentTitle(title.textContent);
     const totalLabel = `${total.toLocaleString()}${payload.totalIsExact === false ? '+' : ''} results`;
     meta.innerHTML = rightPanelListMetaHtml(totalLabel, {
       showLayout: true,
-      sortHtml: searchResultsSortHtml(payload.counts?.plugins),
+      sortHtml: searchResultsSortHtml(payload.counts?.plugins, collection?.collection.sorts),
     });
     appendPluginSearchWarnings(meta, pluginErrors);
-    renderSearchMetaFilters(payload);
+    if (!collection) renderSearchMetaFilters(payload);
     const pageInfo = remotePageInfo(total, rows.length, remoteLimit);
     renderPager(pageInfo);
     applyCardLayout('search');
@@ -7338,6 +7418,14 @@ search.addEventListener('input', () => {
     searchInputTimer = null;
   }
   currentPage = 1;
+  if (activeBrowserCollection()) {
+    updateCurrentUrl(true);
+    searchInputTimer = setTimeout(() => {
+      searchInputTimer = null;
+      void render();
+    }, 250);
+    return;
+  }
   if (selected === '__history__') {
     historyNavigationDate = '';
     pendingHistoryDate = '';
@@ -7449,7 +7537,7 @@ function handleMetaChange(event) {
     return;
   }
   if (target instanceof HTMLSelectElement && target.dataset.searchSort !== undefined) {
-    const context = searchSortPreferenceContext();
+    const context = activeBrowserCollection() ? 'meta' : searchSortPreferenceContext();
     const nextSort = target.value || 'relevance';
     const previousSort = searchResultsSort;
     const previousExplicit = searchSortExplicit;
@@ -7457,7 +7545,7 @@ function handleMetaChange(event) {
     searchResultsSort = nextSort;
     searchSortExplicit = true;
     saveSortPreference(context, nextSort, previousPreference, () => {
-      if (searchSortPreferenceContext() !== context || searchResultsSort !== nextSort) return;
+      if ((activeBrowserCollection() ? 'meta' : searchSortPreferenceContext()) !== context || searchResultsSort !== nextSort) return;
       searchResultsSort = previousSort;
       searchSortExplicit = previousExplicit;
       currentPage = 1;
