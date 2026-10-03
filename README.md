@@ -1,5 +1,10 @@
 # YT Library Manager
 
+Licensed under the GNU General Public License, version 3 or (at your option)
+any later version (`GPL-3.0-or-later`). See [LICENSE](LICENSE). Distributed
+without any warranty; see the license for details. Third-party dependencies
+retain their own licenses.
+
 YT Library Manager is a local Python web app for browsing, enriching, and reconciling a personal YouTube library. It combines current playlist data, live YouTube history pulls, Takeout watch history, cached thumbnails, metadata and recovery fetches, and an admin dashboard into one local interface.
 
 ## Features
