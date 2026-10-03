@@ -88,7 +88,7 @@ CARD_LAYOUTS = frozenset({"grid", "detailed", "compact"})
 WEEK_STARTS = frozenset({"sunday", "monday"})
 PAGE_SIZES = frozenset({50, 100, 250, 500})
 SEARCH_SORTS = frozenset(
-    {"relevance", "title", "title_desc", "newest", "oldest", "most_watched", "type"}
+    {"relevance", "title", "title_desc", "newest", "oldest", "most_watched", "most_liked", "type"}
 )
 PLAYLIST_VIDEO_SORTS = frozenset(
     {"newest_added", "title", "title_desc", "oldest_added", "most_watched", "playlist_order"}

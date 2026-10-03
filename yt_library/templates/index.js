@@ -237,6 +237,7 @@ window.YTLibraryBrowserPlugins = Object.freeze({
     entityCards: 1,
     pluginJsonMutations: 1,
     searchResultPresentations: 1,
+    unifiedSearchCards: 1,
   }),
   register: registerBrowserPlugin,
 });
@@ -398,6 +399,15 @@ function browserVideoFacetResultPlugins() {
     plugin.search.separateResults === true
     && typeof plugin.search.fetch === 'function'
     && browserVideoFacetState(plugin).present
+  ));
+}
+
+function browserServerSearchPlugins(query) {
+  if (!query.trim() || !searchKindEnabled('videos')) return [];
+  return browserVideoFilterPlugins().filter(plugin => (
+    plugin.search.serverResults === true
+    && browserVideoFacetState(plugin).present
+    && (!browserSearchFieldDefinition(plugin) || browserPluginSearchFieldEnabled(plugin))
   ));
 }
 
@@ -570,7 +580,7 @@ const playlistVideoOptInFilters = [
   },
 ];
 const searchSortOptions = new Set([
-  'relevance', 'title', 'title_desc', 'newest', 'oldest', 'most_watched', 'type',
+  'relevance', 'title', 'title_desc', 'newest', 'oldest', 'most_watched', 'most_liked', 'type',
 ]);
 const playlistVideoSortOptions = new Set([
   'newest_added', 'title', 'title_desc', 'oldest_added', 'most_watched', 'playlist_order',
@@ -4282,7 +4292,15 @@ function syncSearchFiltersForSelection() {
   renderSearchMetaFilters();
 }
 
-function searchResultsSortHtml() {
+function pluginSearchSortOptions(counts = {}) {
+  return browserSearchPlugins().flatMap(plugin => (
+    Number(counts[plugin.id] || 0) > 0 && Array.isArray(plugin.search.sortOptions)
+      ? plugin.search.sortOptions.filter(option => option?.value === 'most_liked' && option.label)
+      : []
+  ));
+}
+
+function searchResultsSortHtml(pluginCounts = {}) {
   const options = [
     ['relevance', 'Relevance'],
     ['title', 'Title A-Z'],
@@ -4292,10 +4310,13 @@ function searchResultsSortHtml() {
     ['most_watched', 'Most watched'],
     ['type', 'Type'],
   ];
+  for (const option of pluginSearchSortOptions(pluginCounts)) {
+    if (!options.some(([value]) => value === option.value)) options.push([option.value, option.label]);
+  }
   return `
     <label class="view-sort">Sort
       <select data-search-sort>
-        ${options.map(([optionValue, label]) => `<option value="${optionValue}" ${searchResultsSort === optionValue ? 'selected' : ''}>${label}</option>`).join('')}
+        ${options.map(([optionValue, label]) => `<option value="${escapeHtml(optionValue)}" ${searchResultsSort === optionValue ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}
       </select>
     </label>
   `;
@@ -4794,6 +4815,17 @@ async function fetchBrowserPluginSearches(query, limit, offset) {
 }
 
 async function prepareBrowserSearchResultPresentations(results, errors, query, generation) {
+  for (const plugin of browserSearchPlugins()) {
+    const rows = results.filter(row => row.kind === 'plugin' && row.pluginId === plugin.id && !row.error);
+    if (!rows.length || typeof plugin.search.prepareResults !== 'function') continue;
+    try {
+      await plugin.search.prepareResults(rows.map(row => row.item), browserPluginHost(plugin.id));
+    } catch (error) {
+      errors.push({id: plugin.id, label: plugin.search.label || plugin.id, message: error.message});
+      for (const row of rows) row.error = error.message;
+    }
+    if (generation !== renderGeneration) return new Map();
+  }
   const prepared = await SearchResultPresentations.prepareBatch({
     results,
     plugins: browserSearchPlugins(),
@@ -4895,6 +4927,7 @@ async function fetchOmniSearch(query, page = currentPage) {
     .map(browserPluginStateKey)
     .filter(Boolean)
     .join(',');
+  for (const plugin of browserServerSearchPlugins(query)) coreParams.append('result_plugin', plugin.id);
   const videoPluginFacetCountsKey = JSON.stringify([
     query,
     searchFieldsValue,
@@ -4978,9 +5011,9 @@ async function fetchOmniSearch(query, page = currentPage) {
       totalIsExact: pluginPayload.totalIsExact && corePayload.totalIsExact !== false,
       counts: {
         ...(corePayload.counts || {}),
-        plugins: pluginPayload.counts,
+        plugins: {...(corePayload.counts?.plugins || {}), ...pluginPayload.counts},
       },
-      pluginErrors: pluginPayload.errors,
+      pluginErrors: [...(corePayload.pluginErrors || []), ...pluginPayload.errors],
       results: [...pluginPayload.results, ...coreRows],
     };
     if (!metaCountsCache.has(metaCountsKey)) {
@@ -6643,6 +6676,13 @@ async function renderCurrentView() {
       return;
     }
     if (generation !== renderGeneration) return;
+    if (searchResultsSort === 'most_liked'
+      && !pluginSearchSortOptions(payload.counts?.plugins).some(option => option.value === searchResultsSort)) {
+      searchResultsSort = defaultSearchResultsSort(query);
+      searchSortExplicit = false;
+      syncSearchUrlAndRender();
+      return;
+    }
     const rows = payload.results || [];
     const pluginErrors = [...(payload.pluginErrors || [])];
     const resultPresentations = await prepareBrowserSearchResultPresentations(
@@ -6663,7 +6703,7 @@ async function renderCurrentView() {
     const totalLabel = `${total.toLocaleString()}${payload.totalIsExact === false ? '+' : ''} results`;
     meta.innerHTML = rightPanelListMetaHtml(totalLabel, {
       showLayout: true,
-      sortHtml: searchResultsSortHtml(),
+      sortHtml: searchResultsSortHtml(payload.counts?.plugins),
     });
     appendPluginSearchWarnings(meta, pluginErrors);
     renderSearchMetaFilters(payload);
@@ -7195,6 +7235,15 @@ function historyRowCardFor(video, { layout = 'detailed' } = {}) {
 
 function searchResultCardFor(result, options = {}) {
   if (result.kind === 'plugin') {
+    if (result.error) {
+      const card = document.createElement('article');
+      card.className = 'card';
+      const body = document.createElement('div');
+      body.className = 'body status';
+      body.textContent = `${browserSearchPlugin(result.pluginId)?.search?.label || result.pluginId} unavailable: ${result.error}`;
+      card.append(body);
+      return card;
+    }
     const plugin = browserSearchPlugin(result.pluginId);
     const card = plugin?.search?.renderResult?.(
       result.item,

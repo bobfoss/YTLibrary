@@ -1753,6 +1753,7 @@ OMNI_SEARCH_SORTS = {
     "newest",
     "oldest",
     "most_watched",
+    "most_liked",
     "type",
 }
 OMNI_SEARCH_KIND_ORDER = ("video", "clip", "playlist", "channel")
@@ -1925,6 +1926,8 @@ def _sort_omni_results(results: list[dict[str, Any]], sort: str) -> None:
         results.sort(key=lambda result: result["_sort_date"])
     elif sort == "most_watched":
         results.sort(key=lambda result: result["_watch_count"], reverse=True)
+    elif sort == "most_liked":
+        results.sort(key=lambda result: result.get("_like_count") if result.get("_like_count") is not None else -1, reverse=True)
     elif sort == "type":
         results.sort(key=lambda result: kind_rank.get(result["kind"], 99))
 
@@ -2479,6 +2482,7 @@ def _omni_video_sql_data(
     sort: str,
     candidate_limit: int,
     display_timezone: str,
+    include_filtered_ids: bool = False,
 ) -> dict[str, Any]:
     _populate_omni_video_filter_table(
         conn,
@@ -2928,6 +2932,7 @@ def _omni_video_sql_data(
             "candidate.watch_count DESC, candidate.sort_title, candidate.source_order"
         ),
         "type": "candidate.sort_title, candidate.source_order",
+        "most_liked": "candidate.sort_title, candidate.source_order",
     }.get(
         sort,
         "candidate.sort_date_fallback, candidate.sort_date DESC, "
@@ -2986,6 +2991,12 @@ def _omni_video_sql_data(
             )
         },
         "filtered_total": filtered_total,
+        "filtered_video_ids": {
+            row[0] for row in conn.execute(
+                f"SELECT video_id FROM temp.omni_video_candidates candidate "
+                f"WHERE {native_filter_clause} AND {plugin_match_clause}", sql_params,
+            )
+        } if include_filtered_ids else set(),
         "counts": counts,
         "facet_counts": facet_counts,
     }
@@ -3036,8 +3047,17 @@ def omni_search_data(
     limit: int = 100,
     offset: int = 0,
     display_timezone: str = "UTC",
+    plugin_result_descriptors: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     query = query.strip()
+    if query and plugin_result_descriptors:
+        video_search_match_ids = set(video_search_match_ids) | {
+            row["video_id"] for row in plugin_result_descriptors
+        }
+        memberships = {key: set(ids) for key, ids in (video_search_match_memberships or {}).items()}
+        for row in plugin_result_descriptors:
+            memberships.setdefault(row["pluginId"], set()).add(row["video_id"])
+        video_search_match_memberships = memberships
     active_result_kinds = (
         set(OMNI_SEARCH_KIND_ORDER)
         if result_kinds is None
@@ -3621,6 +3641,7 @@ def omni_search_data(
             active_video_facet_memberships=active_video_facet_memberships,
             active_video_search_match_memberships=active_video_search_match_memberships,
             sort=sort,
+            include_filtered_ids=bool(plugin_result_descriptors),
             candidate_limit=offset + limit,
             display_timezone=display_timezone,
         )
@@ -3910,6 +3931,25 @@ def omni_search_data(
         else:
             other_results.append(result)
     results = [*other_results, *sql_video_results, *supplemental_video_results]
+    plugin_counts: dict[str, int] = {}
+    eligible_video_ids = set(video_sql_data.get("filtered_video_ids") or ()) | {
+        result["item"]["video_id"] for result in supplemental_video_results
+    }
+    if query and "video" in active_result_kinds:
+        for descriptor in plugin_result_descriptors:
+            if descriptor["video_id"] not in eligible_video_ids:
+                continue
+            plugin_id = descriptor["pluginId"]
+            plugin_counts[plugin_id] = plugin_counts.get(plugin_id, 0) + 1
+            date = descriptor["oldest_at"] if sort == "oldest" else descriptor["newest_at"]
+            results.append({
+                "kind": "plugin", "pluginId": plugin_id, "id": descriptor["id"],
+                "item": {"video_id": descriptor["video_id"], "title": descriptor["title"]},
+                "score": 2, "matchedDescription": False,
+                "_title": descriptor["title"].casefold(), "_sort_date": date,
+                "_sort_date_fallback": not bool(date), "_like_count": descriptor["like_count"],
+                "_watch_count": 0, "_history_ordinal": 0, "_clip_feed_ordinal": 0,
+            })
     _sort_omni_results(results, sort)
     materialized_video_count = len(sql_video_results)
     total = (
@@ -3956,12 +3996,15 @@ def omni_search_data(
         "playlists": sum(1 for result in results if result["kind"] == "playlist"),
         "channels": sum(1 for result in results if result["kind"] == "channel"),
     }
+    if plugin_counts:
+        counts["plugins"] = plugin_counts
     for result in page:
         result.pop("_title", None)
         result.pop("_sort_date", None)
         result.pop("_sort_date_fallback", None)
         result.pop("_watch_count", None)
         result.pop("_history_ordinal", None)
+        result.pop("_like_count", None)
     return {
         "query": query,
         "searchFields": sorted(active_search_fields),

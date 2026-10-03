@@ -157,6 +157,10 @@ facts, transient PIDs, or other runtime-only data here.
   Comments is a Videos facet with comments/no comments children and persisted
   choices; the additive `video_facet_result_cards_v1` feature lets it retain
   separate thread result cards when the comments child is enabled.
+  The generic `unified_search_cards_v1` contract integrates query-matching plugin
+  cards into native sorting and pagination. Providers return lightweight video-bound
+  descriptors, then hydrate only the selected page. Video facets apply before
+  pagination; dynamic Most liked is offered only when matching plugin cards exist.
 - Plugin search can enrich canonical videos and clips, project bounded virtual
   videos, decorate native entity cards, add scoped channel-video tabs, and
   plan work through the host contract. It must not couple core queries or

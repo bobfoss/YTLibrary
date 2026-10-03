@@ -147,6 +147,46 @@ function contributionLabels(slot) {
   ));
 }
 
+test('unified result cards require a query and enabled video and search facets', () => {
+  let videos = true;
+  let present = true;
+  let field = true;
+  const sample = {id: 'sample', search: {serverResults: true}};
+  const context = {
+    searchKindEnabled: () => videos,
+    browserVideoFilterPlugins: () => [sample],
+    browserVideoFacetState: () => ({present}),
+    browserSearchFieldDefinition: () => ({key: 'sample'}),
+    browserPluginSearchFieldEnabled: () => field,
+  };
+  const start = indexSource.indexOf('function browserServerSearchPlugins(');
+  const end = indexSource.indexOf('\nfunction ', start + 1);
+  vm.runInNewContext(indexSource.slice(start, end), context);
+  assert.equal(context.browserServerSearchPlugins('  ').length, 0);
+  assert.equal(context.browserServerSearchPlugins('needle').length, 1);
+  field = false;
+  assert.equal(context.browserServerSearchPlugins('needle').length, 0);
+  field = true;
+  present = false;
+  assert.equal(context.browserServerSearchPlugins('needle').length, 0);
+  present = true;
+  videos = false;
+  assert.equal(context.browserServerSearchPlugins('needle').length, 0);
+});
+
+test('Most liked is offered only for matching plugin cards in the main sort control', () => {
+  let plugins = [{id: 'sample', search: {sortOptions: [{value: 'most_liked', label: 'Most liked'}]}}];
+  const context = {browserSearchPlugins: () => plugins, searchResultsSort: 'most_liked', escapeHtml: text => text};
+  const start = indexSource.indexOf('function pluginSearchSortOptions(');
+  const end = indexSource.indexOf('\nfunction cardLayoutIconSvg', start + 1);
+  vm.runInNewContext(indexSource.slice(start, end), context);
+  assert.doesNotMatch(context.searchResultsSortHtml({}), /Most liked/);
+  assert.doesNotMatch(context.searchResultsSortHtml({sample: 0}), /Most liked/);
+  assert.match(context.searchResultsSortHtml({sample: 2}), /value="most_liked" selected>Most liked/);
+  plugins = [];
+  assert.doesNotMatch(context.searchResultsSortHtml({sample: 2}), /Most liked/);
+});
+
 test('standalone result plugins honor their Search in field without hiding empty-query browsing', async () => {
   const start = indexSource.indexOf('async function fetchBrowserPluginSearches(');
   const end = indexSource.indexOf('\nasync function ', start + 1);

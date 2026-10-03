@@ -20,6 +20,7 @@ import threading
 import urllib.request
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -43,6 +44,7 @@ PLUGIN_HOST_FEATURES = frozenset(
         "worker_followup_v1",
         "video_discovery_v1",
         "video_facet_result_cards_v1",
+        "unified_search_cards_v1",
     }
 )
 PLUGIN_ENTRY_POINT_GROUP = "yt_library.plugins"
@@ -1788,6 +1790,59 @@ class PluginManager:
             return 503, "application/json; charset=utf-8", _asset_error(
                 f"Plugin browser asset failed: {type(exc).__name__}: {exc}"
             )
+
+    def _search_card_handler(self, plugin_id: str, name: str):
+        record = self._records.get(plugin_id)
+        if record is None or record.instance is None:
+            raise LookupError(f"Plugin is unavailable: {plugin_id}")
+        handler = getattr(record.instance, name, None)
+        if not callable(handler):
+            raise TypeError(f"Plugin does not provide {name}: {plugin_id}")
+        return handler
+
+    def search_result_descriptors(self, plugin_id: str, query: str) -> list[dict[str, Any]]:
+        if not query.strip():
+            return []
+        payload = self._search_card_handler(plugin_id, "search_result_descriptors")(query)
+        results = []
+        seen = set()
+        for raw in payload:
+            if len(results) >= PLUGIN_TASK_LIMIT:
+                raise ValueError("Plugin search result limit exceeded")
+            if not isinstance(raw, Mapping):
+                raise TypeError("Plugin search descriptor must be a mapping")
+            identity = str(raw.get("id") or "")
+            video_id = str(raw.get("video_id") or "")
+            if not identity or len(identity) > 512 or identity in seen:
+                raise ValueError("Plugin search result IDs must be nonempty and unique")
+            if not YOUTUBE_VIDEO_ID.fullmatch(video_id):
+                raise ValueError("Plugin search result must reference a video ID")
+            dates = {}
+            for key in ("newest_at", "oldest_at"):
+                value = raw.get(key)
+                if value:
+                    parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+                    if parsed.tzinfo is None:
+                        raise ValueError("Plugin search dates must include a timezone")
+                    value = parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                dates[key] = value or ""
+            likes = raw.get("like_count")
+            if likes is not None and (type(likes) is not int or likes < 0):
+                raise ValueError("Plugin search like count must be a nonnegative integer or null")
+            results.append({"id": identity, "pluginId": plugin_id, "video_id": video_id,
+                            "title": str(raw.get("title") or ""), "like_count": likes, **dates})
+            seen.add(identity)
+        return results
+
+    def hydrate_search_results(self, plugin_id: str, ids: list[str], query: str) -> dict[str, Any]:
+        if len(ids) > 5000:
+            raise ValueError("Plugin search hydration accepts at most 5000 results")
+        payload = self._search_card_handler(plugin_id, "hydrate_search_results")(ids, query)
+        if not isinstance(payload, Mapping) or set(payload).difference(ids):
+            raise ValueError("Plugin search hydration must map requested IDs to items")
+        if any(not isinstance(item, Mapping) for item in payload.values()):
+            raise TypeError("Plugin search items must be mappings")
+        return {key: dict(value) for key, value in payload.items()}
 
     def filter_videos(
         self,

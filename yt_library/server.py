@@ -243,6 +243,38 @@ def video_collection_filter_args(params: dict[str, list[str]]) -> dict[str, Any]
     }
 
 
+def plugin_search_card_query_data(manager: PluginManager, params: dict[str, list[str]], query: str) -> dict[str, Any]:
+    descriptors = []
+    errors = []
+    if query.strip():
+        for plugin_id in dict.fromkeys(params.get("result_plugin", [])):
+            try:
+                descriptors.extend(manager.search_result_descriptors(plugin_id, query))
+            except Exception as exc:
+                errors.append({"id": plugin_id, "label": plugin_id, "message": str(exc)})
+    return {"descriptors": descriptors, "errors": errors}
+
+
+def hydrate_plugin_search_cards(manager: PluginManager, data: dict[str, Any], query: str, errors: list[dict]) -> None:
+    grouped: dict[str, list[dict]] = {}
+    for result in data.get("results", []):
+        if result.get("kind") == "plugin":
+            grouped.setdefault(result["pluginId"], []).append(result)
+    for plugin_id, results in grouped.items():
+        try:
+            items = manager.hydrate_search_results(plugin_id, [row["id"] for row in results], query)
+            for result in results:
+                if result["id"] not in items:
+                    raise ValueError("A matching result is no longer available; refresh search")
+                result["item"] = items[result["id"]]
+        except Exception as exc:
+            errors.append({"id": plugin_id, "label": plugin_id, "message": str(exc)})
+            for result in results:
+                result["error"] = str(exc)
+    if errors:
+        data["pluginErrors"] = errors
+
+
 def video_plugin_query_data(
     plugin_manager: PluginManager,
     params: dict[str, list[str]],
@@ -1552,6 +1584,7 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
             )
             search_fields = query_set_param(params, "search_fields")
             sort = (params.get("sort") or [None])[0]
+            search_cards = plugin_search_card_query_data(self.plugin_manager, params, query)
             try:
                 plugin_data = video_plugin_query_data(
                     self.plugin_manager,
@@ -1591,6 +1624,7 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
                 data = omni_search_data(
                     conn,
                     query,
+                    plugin_result_descriptors=search_cards["descriptors"],
                     search_fields=search_fields,
                     result_kinds=query_set_param(params, "kinds"),
                     playlist_group_key=playlist_group_key,
@@ -1668,6 +1702,7 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
                 )
             finally:
                 conn.close()
+            hydrate_plugin_search_cards(self.plugin_manager, data, query, search_cards["errors"])
             self.send_json(data)
             return
         if parsed.path == "/api/history/search":

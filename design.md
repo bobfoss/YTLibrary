@@ -456,6 +456,28 @@ automatically retry a command whose delivery is uncertain.
 
 ### Browser assets and browser API version 2
 
+The `unified_search_cards_v1` host feature lets video-bound plugin cards join
+native search ordering and pagination. Browser plugins opt in with
+`search.serverResults: true`; the host requests these through `result_plugin`
+only for nonblank queries with the video's present facet and Search in field
+enabled. The Python `search_result_descriptors(query)` method returns lightweight
+mappings with unique `id`, `video_id`, `title`, UTC `newest_at`/`oldest_at`, and
+nullable nonnegative integer `like_count`. Missing dates remain empty. Descriptors
+are bounded by the common plugin task limit, and video filters apply to the
+associated source videos. Core merges descriptors into the common ordering before
+pagination and calls `hydrate_search_results(ids, query)` only for that page;
+it must return a mapping from requested IDs to plugin-owned card payloads.
+No plugin schema or package is imported by the host.
+
+Optional browser `search.prepareResults(items, host)` hydrates cached profile or
+video presentation data for the selected page. `search.sortOptions` may contribute
+`{value: 'most_liked', label: 'Most liked'}` to the main dropdown when the plugin
+has matches anywhere in the filtered result set, including on later pages.
+Known like counts sort descending; results without counts follow. If this option
+becomes unavailable, the view falls back to its normal default ordering. Sort
+preferences and URL state use the existing shared search controls. Legacy
+standalone `search.fetch` plugins retain their previous behavior.
+
 A plugin declares assets as dictionaries containing `path` and `type`:
 
 ```python
