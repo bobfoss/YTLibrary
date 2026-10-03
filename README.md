@@ -392,6 +392,17 @@ The database stores canonical video metadata once in `videos`; playlist membersh
 
 ## Optional plugins
 
+The known plugin source repositories are listed in
+[`plugins/catalog.json`](plugins/catalog.json):
+[YT Comments](https://github.com/bobfoss/yt-comments),
+[YT Live Chat](https://github.com/bobfoss/yt-live-chat),
+[YT PocketTube](https://github.com/bobfoss/yt-pockettube),
+[YT Subtitles](https://github.com/bobfoss/yt-subtitles), and
+[YTLLM](https://github.com/bobfoss/yt-llm).
+This initial catalog lists source projects; release artifacts and an Admin
+installer are planned, and the running application does not yet consume it.
+See [the distribution proposal](design.md#planned-plugin-distribution-and-management).
+
 YT Library discovers separately installed plugins through the
 `yt_library.plugins` Python entry-point group, but loads only plugins explicitly
 enabled in local configuration. Plugin API routes are namespaced below

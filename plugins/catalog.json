@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "plugins": [
+    {
+      "id": "comments",
+      "name": "YT Comments",
+      "description": "Discover, search, and browse YouTube threads in which your account participates.",
+      "distribution": "yt-comments",
+      "repository_url": "https://github.com/bobfoss/yt-comments",
+      "releases": []
+    },
+    {
+      "id": "live_chat",
+      "name": "YT Live Chat",
+      "description": "Capture and browse recorded live chat from ended YouTube livestreams.",
+      "distribution": "yt-live-chat",
+      "repository_url": "https://github.com/bobfoss/yt-live-chat",
+      "releases": []
+    },
+    {
+      "id": "pockettube",
+      "name": "YT PocketTube",
+      "description": "Import PocketTube exports to organize playlists and channels into groups.",
+      "distribution": "yt-pockettube",
+      "repository_url": "https://github.com/bobfoss/yt-pockettube",
+      "releases": []
+    },
+    {
+      "id": "subtitles",
+      "name": "YT Subtitles",
+      "description": "Capture, browse, and search video subtitles and clip transcripts.",
+      "distribution": "yt-subtitles",
+      "repository_url": "https://github.com/bobfoss/yt-subtitles",
+      "releases": []
+    },
+    {
+      "id": "llm",
+      "name": "YTLLM",
+      "description": "Ask questions about eligible videos using YouTube's native Ask AI experience.",
+      "distribution": "yt-llm",
+      "repository_url": "https://github.com/bobfoss/yt-llm",
+      "releases": []
+    }
+  ]
+}

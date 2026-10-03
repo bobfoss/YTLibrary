@@ -131,6 +131,11 @@ facts, transient PIDs, or other runtime-only data here.
 
 ## Optional Plugin Boundary
 
+- The five implemented plugins have public repositories under `bobfoss` on
+  GitHub, listed in `plugins/catalog.json`. This is a source catalog only;
+  approved releases and the Admin installer remain planned. The distribution
+  proposal in `design.md` uses GitHub Release wheels, compatibility checks,
+  serialized maintenance, and plugin data outside installed package directories.
 - Plugins are optional, separately packaged repositories with their own data,
   schema, migrations, configuration, caches, source artifacts, and tests.
 - Core must not import a plugin package, depend on its database, add its domain

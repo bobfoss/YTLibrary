@@ -339,6 +339,81 @@ ID-shaped `id`, a nonempty `label`, a nonnegative integer `value`, and a
 text. The host owns number and byte formatting, and metrics never grant the
 plugin access to Admin DOM.
 
+### Planned plugin distribution and management
+
+Status: proposal and initial source catalog. The current application still uses
+manually installed Python packages and the existing enable/disable controls.
+`plugins/catalog.json` lists the five published plugin repositories. Empty
+`releases` means there is no catalog-approved installable release yet. YT Download
+is design-only and is not advertised as an installable plugin.
+
+Use a Python wheel as the installation artifact, attached to a versioned GitHub
+Release in each plugin repository. Also publish a source distribution (`.tar.gz`)
+for source consumers. A wheel contains the package, entry-point metadata, browser
+assets, and required SQL files and installs without building from source. Build
+and test artifacts from a tagged checkout in CI; check package contents and
+installed entry-point loading before publishing. The catalog should select
+explicit releases, never a moving branch or an unchecked GitHub latest link.
+
+Keep the catalog in YTL initially, with a bundled copy and a cached remote copy
+from the same maintained repository. A release record should supply the version,
+tag, commit, release-notes URL, exact wheel URL, byte size, SHA-256, Python version
+requirement, Python/browser API versions, and required host features. Generate
+package identity and dependency metadata from the built artifact. Match these
+against the wheel and installed host before offering installation. A checksum
+checks bytes against the trusted catalog; it is not an independent publisher
+signature. Catalog refresh failure must leave the last valid catalog usable.
+
+Advanced Admin should show Installed and Available lists with a short description,
+source link, installed/latest compatible version, status, and an appropriate
+Install, Update, Enable/Disable, or Remove action. Explain missing compatibility
+features or required configuration on the affected plugin. Installing and enabling
+remain separate states; an explicit Install and enable action may combine them.
+Represent editable checkouts as Development installs, with their source path;
+ordinary package updates must not replace them. Keep the interaction in the
+existing generic plugin panel, driven by catalog and plugin declarations.
+
+Run package operations through one serialized maintenance controller. Download
+and validate the selected artifacts before stopping work; drain workers, preserve
+queue intent, replace packages while the YTL child process is stopped, then start
+and verify status. Windows must use `scripts/service.ps1` and its persistent host
+protocol, extended with a maintenance operation rather than a second lifecycle
+implementation. Show progress and operation errors in Admin. Reject overlapping
+operations and stale version selections. Mutating HTTP requests must enforce
+same-origin/CSRF checks and accept catalog IDs and versions, never arbitrary pip
+arguments, paths, or untrusted package URLs.
+
+Initially install into YTL's existing virtual environment using pip as a
+subprocess with explicit arguments. Resolve dependencies before maintenance and
+require wheels, including for dependencies. Evaluate changes against the host
+and every installed plugin: an incompatible dependency must produce an actionable
+error rather than silently upgrading or downgrading the host. YT Subtitles
+currently requires the `curl-cffi` yt-dlp extra, which is absent from core's
+declared requirements; this must be included in dependency planning. Dedicated
+environments would require a different out-of-process plugin contract, so they
+are a separate future architecture decision.
+
+For new managed installs, keep plugin configuration, databases, and captures
+outside installed package directories, under a configurable data root such as
+`plugin-data/<plugin-id>/`. Pass the explicit plugin config path through the
+existing host contract; keep all plugin schemas and configuration semantics
+plugin-owned. Preserve existing configured paths. A generic, plugin-declared
+first-run config template is needed where a plugin cannot bootstrap itself:
+PocketTube currently requires an existing JSON config, and Subtitles' fallback
+config path is relative to its installed package. Removal should uninstall code
+while retaining data and configuration; deleting data is a separate operation.
+Package rollback alone cannot undo plugin database migrations. Retain the prior
+wheel, but promise automatic rollback only when the plugin's data compatibility
+or a coordinated backup/restore supports it.
+
+Implementation sequence: establish repeatable wheel/sdist releases and package
+smoke tests; add approved releases and a catalog validator; add the maintenance
+controller and operation persistence; then expose the installer in Advanced Admin.
+Before distributing the first releases, choose repository licenses and complete
+fresh-install config checks. Test with generic fixture plugins, preserving the
+optional-plugin boundary, and verify install/update/failure/removal on a fresh
+YTL environment as well as an existing editable development setup.
+
 ### Python plugin object
 
 The entry-point factory takes no arguments and returns one object. A minimal
