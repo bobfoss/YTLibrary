@@ -404,9 +404,67 @@ The known plugin source repositories are listed in
 [YT PocketTube](https://github.com/bobfoss/yt-pockettube),
 [YT Subtitles](https://github.com/bobfoss/yt-subtitles), and
 [YTLLM](https://github.com/bobfoss/yt-llm).
-This initial catalog lists source projects; release artifacts and an Admin
-installer are planned, and the running application does not yet consume it.
-See [the distribution proposal](design.md#planned-plugin-distribution-and-management).
+YTL and these five plugins use `GPL-3.0-or-later`. The catalog still lists source
+projects only: release candidates can now be built and inspected locally, but
+no release artifacts are approved for installation yet. The running application
+does not consume the catalog, and Admin installation remains planned.
+See [the distribution plan](design.md#planned-plugin-distribution-and-management).
+
+### Plugin packaging and installation preflight
+
+Maintainer tools run from the YTL repository and require `requirements-dev.txt`.
+They do not stop the service, change plugin activation, or replace installed
+plugins. Start with the read-only inventory and catalog validation:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/plugin_packages.py inventory
+.\.venv\Scripts\python.exe scripts/plugin_packages.py catalog
+```
+
+The inventory identifies PEP 660 editable checkouts as protected **development**
+installs. Unrecognized origins outside the active environment are protected too.
+Versions come from installed distribution metadata; editable metadata can lag
+the source's current version until explicitly reinstalled by its developer.
+
+Build a release candidate from a clean, committed plugin checkout:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/build_plugin_release.py "..\YT Comments" comments --destination ".codex\plugin-release-candidates\comments"
+.\.venv\Scripts\python.exe scripts/smoke_plugin_wheel.py ".codex\plugin-release-candidates\comments\yt_comments-0.1.0-py3-none-any.whl"
+```
+
+The builder uses `git archive`, builds a source tarball and then a wheel from
+that tarball, and produces `release.json` plus `catalog-candidate.json` with
+the exact source commit, compatibility declarations, sizes, and SHA-256 hashes.
+Existing output directories are never overwritten. These are **candidates**:
+the generated GitHub release URLs do not exist until explicitly published.
+Publish the exact tested files against a matching version tag/commit, verify
+their downloaded hashes, and only then approve the release in the bundled
+catalog. Publishing/tagging/pushing is not performed by these tools.
+
+Inspection never imports plugin code. The separate smoke tool **does execute
+the selected wheel**, so use it only for trusted maintainer-built artifacts.
+It installs into a disposable target, imports the wheel rather than the editable
+checkout, verifies assets and declarations, and tests startup/status with fresh
+external configuration. It uses the maintainer environment's dependencies and
+does not replace a clean-environment dependency-installation test.
+
+For an approved catalog release, `scripts/plugin_packages.py prepare ID VERSION
+--destination PATH` verifies the artifact, checks Python/API/host-feature
+compatibility, and runs pip's wheel-only dependency dry run. It considers core
+requirements and other installed plugins' extras, pins existing dependencies,
+and refuses to replace development installs or accept an older/same version.
+The configured outbound proxy applies. Maintainers may select a candidate via
+`--catalog PATH --local-wheel PATH`; the local wheel must still match the
+catalog's filename, size, hash, identity, and compatibility metadata.
+
+Preparation writes a wheel and `plan.json` into a new directory, with the
+environment snapshot and proposed dependencies. It does **not** install or
+enable anything, create plugin data, download the remaining dependency wheels,
+or guarantee that a later environment is unchanged. The pending maintenance
+controller must revalidate, stage dependencies, coordinate workers/service
+lifecycle, and verify activation. There are no Admin install/update/remove
+buttons yet. Keep personal preparation outputs under ignored `.codex/`.
 
 YT Library discovers separately installed plugins through the
 `yt_library.plugins` Python entry-point group, but loads only plugins explicitly

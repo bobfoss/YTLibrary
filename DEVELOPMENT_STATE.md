@@ -132,10 +132,17 @@ facts, transient PIDs, or other runtime-only data here.
 ## Optional Plugin Boundary
 
 - The five implemented plugins have public repositories under `bobfoss` on
-  GitHub, listed in `plugins/catalog.json`. This is a source catalog only;
-  approved releases and the Admin installer remain planned. The distribution
-  proposal in `design.md` uses GitHub Release wheels, compatibility checks,
-  serialized maintenance, and plugin data outside installed package directories.
+  GitHub, listed in `plugins/catalog.json`; all five and YTL are licensed
+  GPL-3.0-or-later. The catalog still has no approved installable releases.
+  `scripts/build_plugin_release.py`, `smoke_plugin_wheel.py`, and
+  `plugin_packages.py` provide clean-commit wheel/sdist candidates, fresh-config
+  wheel startup checks, catalog/artifact validation, protected editable inventory,
+  and non-mutating dependency preflight. Wheels carry plugin-owned
+  `ytl-plugin.json` API/feature/config-template declarations. Existing packages
+  are pinned during resolution; development installs cannot be replaced.
+  These tools do not change live installations, activation, or service state. Dependency-wheel
+  staging, publication/approval, serialized maintenance, durable operations,
+  and Advanced Admin package controls remain planned in `design.md`.
 - Plugins are optional, separately packaged repositories with their own data,
   schema, migrations, configuration, caches, source artifacts, and tests.
 - Core must not import a plugin package, depend on its database, add its domain

@@ -261,10 +261,14 @@ The left-navigation library lists are named omni-search presets. Search returns 
 - Implement plugin distribution and management using the proposal in `design.md`.
   The five implemented plugin repositories are published and listed in
   `plugins/catalog.json`; the catalog currently has no approved release artifacts.
-  Establish wheel/sdist releases, licenses, artifact checksums and compatibility
-  validation; resolve fresh-install config and dependency requirements; add a
-  serialized maintenance controller and Advanced Admin install/update/remove
-  controls. Preserve plugin data and editable development installs.
+  GPL-3.0-or-later licensing, clean-commit wheel/sdist candidate builds,
+  plugin-owned first-run templates, wheel startup smoke tests, catalog/checksum
+  and compatibility validation, protected editable inventory, and non-mutating
+  dependency preflight are implemented in the packaging scripts. Next: CI/tag
+  publication and approved releases, dependency-wheel staging and environment
+  revalidation, a serialized maintenance controller with durable operations,
+  and Advanced Admin install/update/remove controls. Test full lifecycle and
+  failure recovery on a fresh environment; preserve data and editable installs.
 - Maintain a changelog for each released version that summarizes user-facing changes, fixes, schema impact, and operational notes.
 - Package YT Library as a supported Docker image and add a documented Docker
   Compose and CI workflow covering first-run initialization, schema upgrades,

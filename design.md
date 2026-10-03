@@ -341,11 +341,52 @@ plugin access to Admin DOM.
 
 ### Planned plugin distribution and management
 
-Status: proposal and initial source catalog. The current application still uses
-manually installed Python packages and the existing enable/disable controls.
+Status: packaging/preflight foundation implemented; maintenance and Admin
+installation remain planned. The current application still uses manually
+installed Python packages and the existing enable/disable controls.
 `plugins/catalog.json` lists the five published plugin repositories. Empty
 `releases` means there is no catalog-approved installable release yet. YT Download
 is design-only and is not advertised as an installable plugin.
+
+YTL and all five implemented plugins are licensed `GPL-3.0-or-later`. Each
+plugin wheel now includes a plugin-owned `ytl-plugin.json` (schema version 1)
+beside its Python package. It declares `id`, `plugin_api_version`, nullable
+`browser_api_version` (null for no browser assets), sorted
+`required_host_features`, and an opaque `config_template` object. An explicit
+external config file initialized from that object supports first-run startup
+without teaching core any plugin configuration keys or database schema.
+
+Implemented maintainer tooling:
+
+- `scripts/build_plugin_release.py` builds wheel/sdist candidates from a clean
+  Git archive, rejects common tracked runtime artifacts, inspects the wheel,
+  and generates exact-commit/checksum release records. It does not publish or
+  approve them. `scripts/smoke_plugin_wheel.py` deliberately executes a trusted
+  wheel from a temporary install target with fresh external config/data, checks
+  its declarations against the factory, and verifies package files stay intact.
+- `scripts/plugin_packages.py` validates the source/release catalog, reads
+  installed distribution metadata without importing plugin factories, verifies
+  wheel size/hash/identity/license/API/feature declarations, and rejects unsafe
+  archive paths, startup `.pth` hooks, and wheel `.data` installs. Matching a
+  checksum authenticates bytes relative to the catalog, not arbitrary code.
+- `prepare` protects editable and unknown-origin installs, checks compatibility
+  before download, accepts exact catalog selections only, and stages a verified
+  wheel plus pip's wheel-only dry-run plan. Resolution includes core and other
+  plugins' requirements/extras and pins all existing distributions except the
+  requested plugin. Existing-version conflicts fail instead of upgrading the
+  environment. The plan records the environment and rejects changes observed
+  during preparation. No package/config/service mutations occur.
+- These tools currently require development dependencies `build` and
+  `packaging`. They are not loaded by the running host. The configured proxy is
+  honored; SOCKS builds prefetch backend wheels before offline build isolation.
+  A pip 26.2 SOCKS adapter incompatibility uses pip's documented certifi-only
+  mode for that version/transport, with certificate verification still enabled.
+
+The prepared plan is not a ready-to-apply transaction: dependency wheels,
+operation persistence, current-environment revalidation, coordinated service
+maintenance, rollback policy, catalog refresh/cache, and Admin controls are
+still required. Local candidates are not added to the bundled catalog before
+their exact tag/commit and assets are published and independently verified.
 
 Use a Python wheel as the installation artifact, attached to a versioned GitHub
 Release in each plugin repository. Also publish a source distribution (`.tar.gz`)
@@ -406,13 +447,14 @@ Package rollback alone cannot undo plugin database migrations. Retain the prior
 wheel, but promise automatic rollback only when the plugin's data compatibility
 or a coordinated backup/restore supports it.
 
-Implementation sequence: establish repeatable wheel/sdist releases and package
-smoke tests; add approved releases and a catalog validator; add the maintenance
-controller and operation persistence; then expose the installer in Advanced Admin.
-Before distributing the first releases, choose repository licenses and complete
-fresh-install config checks. Test with generic fixture plugins, preserving the
-optional-plugin boundary, and verify install/update/failure/removal on a fresh
-YTL environment as well as an existing editable development setup.
+Remaining implementation sequence: automate verified tag builds/publication in
+CI and approve releases; complete dependency-wheel staging; add the maintenance
+controller and operation persistence; then expose the installer in Advanced
+Admin. Licenses, local wheel/sdist builds, fresh-config wheel smoke tests, catalog
+validation, and non-mutating preflight are in place. Test with generic fixture
+plugins, preserving the optional-plugin boundary, and verify complete
+install/update/failure/removal on a fresh YTL environment as well as an existing
+editable development setup before enabling live package actions.
 
 ### Python plugin object
 
