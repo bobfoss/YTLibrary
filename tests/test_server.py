@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import Mock, call, patch
 
-from yt_library import core, server, workers
+from yt_library import __version__, core, server, workers
 from yt_library.config import ConfigStore, load_config
 
 from tests.support import migrated_connection
@@ -1110,6 +1110,18 @@ class AdminServerTests(unittest.TestCase):
         timestamp.assert_called_once()
         self.assertEqual(status["serverTime"], "2026-08-21T12:34:56Z")
         self.assertEqual(status["startedAt"], "2026-08-21T12:00:00Z")
+        self.assertEqual(status["version"], __version__)
+
+    def test_browser_and_admin_use_the_canonical_application_version(self) -> None:
+        handler = object.__new__(server.LibraryHandler)
+        handler.display_timezone_name = Mock(return_value="UTC")
+        handler.layout_settings = Mock(return_value={})
+        for template in (server.INDEX_HTML, server.ADMIN_HTML):
+            with self.subTest(template="admin" if template == server.ADMIN_HTML else "browser"):
+                rendered = handler.render_page(template).decode("utf-8")
+                self.assertIn(f'aria-label="YT Library version">v{__version__}</span>', rendered)
+                self.assertIn(f'"appVersion": "{__version__}"', rendered)
+                self.assertNotIn("{{YTL_VERSION}}", rendered)
 
     def test_video_batch_route_hydrates_requested_library_videos(self) -> None:
         handler = object.__new__(server.LibraryHandler)

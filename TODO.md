@@ -257,7 +257,9 @@ The left-navigation library lists are named omni-search presets. Search returns 
   criteria.
 - Persist scheduled Update last-run and failure status across service restarts; the daily schedule and next-run status are available now.
 - Make parent-child relationships in hierarchical filters more visually obvious, including enabled, disabled, selected, and partially selected states.
-- Begin publishing versioned releases through GitHub with a defined versioning and release process.
+- Automate GitHub publication for YTL's versioned releases. The application now
+  has a canonical 1.0.0 version and `CHANGELOG.md`; future releases should update
+  the version and user-facing change/compatibility notes together.
 - Automate plugin release builds/publication in CI and define catalog review and
   release-retention policy. Five initial verified wheel/sdist releases are now
   approved in `plugins/catalog.json`; Windows Advanced Admin supports install,
@@ -266,7 +268,8 @@ The left-navigation library lists are named omni-search presets. Search returns 
   bounded cleanup of old local operation artifacts, cross-platform maintenance,
   and plugin-owned database backup/rollback policies (package rollback alone
   cannot undo migrations). See `design.md` for the implemented lifecycle.
-- Maintain a changelog for each released version that summarizes user-facing changes, fixes, schema impact, and operational notes.
+- Keep `CHANGELOG.md` current for each release, covering user-facing changes,
+  fixes, schema impact, and operational notes (initial 1.0.0 baseline recorded).
 - Package YT Library as a supported Docker image and add a documented Docker
   Compose and CI workflow covering first-run initialization, schema upgrades,
   persistent config/database/cookie/thumbnail mounts, health checks, and
@@ -277,7 +280,9 @@ The left-navigation library lists are named omni-search presets. Search returns 
 - YT Comments is implemented as a separate optional plugin. Its My Activity
   discovery, participating-thread capture, search cards, and video decorator
   remain plugin-owned; core supplies bounded transport and queue services.
-- Beginning with the 1.0 release, preserve or redirect existing browser URLs when route or parameter formatting changes. Pre-1.0 URLs do not require compatibility handling.
+- Enforce the active 1.0 URL-stability policy: preserve existing browser URLs or
+  provide redirects when route/parameter formats change. Retired pre-1.0 URLs
+  do not require retroactive compatibility handling.
 
 ## Deferred Decisions
 

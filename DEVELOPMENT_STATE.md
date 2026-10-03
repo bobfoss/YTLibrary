@@ -4,6 +4,13 @@ Last consolidated: 2026-08-26. This handoff summarizes the current checkout.
 Recheck the live service, queue, schema, and test count before relying on
 snapshot values.
 
+Application version: **1.0.0**, defined in `yt_library/__init__.py` and exposed
+by `--version`, the browser/Admin headers, and `service.version` in status APIs.
+`CHANGELOG.md` records the first versioned baseline. Starting with 1.0, preserve
+existing browser URLs or provide redirects when changing them; obsolete pre-1.0
+routes are not restored retroactively. App, schema, and plugin API versions are
+independent.
+
 ## How To Use This Document
 
 This is the fast reorientation guide for a new development chat. It preserves
@@ -296,7 +303,8 @@ this snapshot are:
    searches.
 3. Persist scheduled Update last-run and failure state across restarts.
 4. Improve hierarchy and partial-selection clarity in nested filters.
-5. Define release/changelog practice and supported Docker packaging.
+5. Maintain `CHANGELOG.md` for versioned releases; publishing automation and
+   supported Docker packaging remain in `TODO.md`.
 6. Keep Download and Comments as separately packaged optional plugins; Comments
    now has its own implementation in the sibling YT Comments repository.
 7. Keep deleted-view reconciliation review-first and reversible; incomplete or

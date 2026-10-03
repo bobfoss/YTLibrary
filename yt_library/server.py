@@ -21,6 +21,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
+from . import __version__
 from .annotations import save_entity_annotation, tag_suggestions
 from .plugin_installation import Installer, maintenance_pending
 from .plugin_packages import PackageError
@@ -2884,6 +2885,7 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
         config = json.dumps(
             {
                 "displayTimezone": timezone_name,
+                "appVersion": __version__,
                 **self.layout_settings(),
             },
             ensure_ascii=False,
@@ -2897,7 +2899,7 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
             '<script src="/search-result-presentations.js"></script>'
             '<script src="/history-workflow.js"></script>'
         )
-        return template.replace("</head>", scripts + "</head>").encode("utf-8")
+        return template.replace("{{YTL_VERSION}}", __version__).replace("</head>", scripts + "</head>").encode("utf-8")
 
     def display_timezone_name(self) -> str:
         return configured_display_timezone(self.config_data)
@@ -2971,6 +2973,7 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
 
     def service_status(self) -> dict[str, Any]:
         return {
+            "version": __version__,
             "status": "restarting" if self.restart_pending() else "running",
             "pid": os.getpid(),
             "startedAt": self.service_started_at,

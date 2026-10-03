@@ -62,6 +62,7 @@
     h1 { font-size: 20px; margin: 0 0 14px; }
     .sidebar-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
     .sidebar-header h1 { margin: 0; }
+    .app-version { color: var(--muted); font-size: 12px; white-space: nowrap; }
     .home-title { color: var(--ink); text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
     .home-title:hover { color: var(--ink); text-decoration: none; }
     .library-mark { width: 28px; height: 28px; flex: none; }
@@ -625,6 +626,7 @@
     <aside>
       <div class="sidebar-header">
         <h1><a class="home-title" href="/"><img class="library-mark" src="/favicon.svg?v=ytl" alt="">YT Library</a></h1>
+        <span class="app-version" aria-label="YT Library version">v{{YTL_VERSION}}</span>
         <a class="admin-link" href="/admin">Admin</a>
       </div>
       <a id="history-nav" class="group" href="/history" data-key="__history__"><span>History</span><span class="count"></span></a>

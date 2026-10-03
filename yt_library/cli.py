@@ -11,6 +11,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from . import __version__
 from .config import (
     config_int,
     config_path,
@@ -401,6 +402,7 @@ def collect_youtube_data_api(args: argparse.Namespace) -> dict[str, int]:
 
 def _preparse_config(argv: list[str] | None) -> tuple[list[str] | None, dict[str, Any]]:
     config_parser = argparse.ArgumentParser(add_help=False)
+    config_parser.add_argument("--version", action="version", version=f"YT Library {__version__}")
     config_parser.add_argument("--config", default=None)
     known, _ = config_parser.parse_known_args(argv)
     return argv, load_config(known.config)
@@ -417,6 +419,7 @@ def main(argv: list[str] | None = None) -> int:
     argv, config = _preparse_config(argv)
     configure_request_pacing(config)
     parser = argparse.ArgumentParser(description="Import YouTube library data and browse it locally.")
+    parser.add_argument("--version", action="version", version=f"YT Library {__version__}")
     parser.add_argument("--config", default=str(config["_config_path"]), help="Path to the JSON configuration file")
     subparsers = parser.add_subparsers(dest="command")
 

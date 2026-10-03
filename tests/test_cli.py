@@ -1,19 +1,37 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import redirect_stdout
+import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from yt_library import cli, core
+from yt_library import __version__, cli, core
 from yt_library.config import load_config
 
 from tests.support import migrated_connection
 
 
 class QueuedCliTests(unittest.TestCase):
+    def test_version_exits_without_loading_config_or_touching_runtime(self) -> None:
+        for argv in (["--version"], ["--config", "not-a-config.json", "--version"]):
+            with self.subTest(argv=argv), patch.object(cli, "load_config") as load, patch.object(
+                cli, "configure_request_pacing"
+            ) as pacing, patch.object(cli, "migrate_database") as migrate, patch.object(
+                cli, "serve"
+            ) as serve, redirect_stdout(io.StringIO()) as output:
+                with self.assertRaises(SystemExit) as result:
+                    cli.main(argv)
+                self.assertEqual(result.exception.code, 0)
+                self.assertEqual(output.getvalue().strip(), f"YT Library {__version__}")
+                load.assert_not_called()
+                pacing.assert_not_called()
+                migrate.assert_not_called()
+                serve.assert_not_called()
+
     def test_recovery_candidate_selector_uses_current_canonical_availability(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             conn = migrated_connection(Path(temp_dir) / "library.sqlite3")

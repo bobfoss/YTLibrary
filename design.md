@@ -12,7 +12,10 @@ The project intentionally favors YouTube web-interface data where practical, usi
 
 The core product goal is not to become a downloader or media server. It is a personal library-management layer that makes YouTube account state easier to inspect, search, preserve, and reconcile. Downloading may be adjacent later, but the current center of gravity is metadata, organization, history, and evidence.
 
-This project is still in an early alpha stage. Prefer the design that clarifies the domain and future maintenance, even when that means a large schema, API, UI, or architecture change. Avoid preserving awkward legacy shapes just because they already exist; source evidence and personal data should be protected, but the application structure is still allowed to move.
+Version 1.0 establishes the supported application baseline. Continue improving
+the domain model and maintainability while protecting source evidence, personal
+data, and existing browser links. Schema changes require supported migrations;
+breaking plugin-contract changes require the owning API version to change.
 
 ## System Shape
 
@@ -53,7 +56,12 @@ Primary surfaces:
 - `/videos/{id}`, `/clips/{id}`, `/playlists/{id}`, and `/channels/{id}` are detail views. Playlist details reuse the video facet model for their member list, while channel details retain their playlist and History tabs.
 - `/admin`: status dashboard and worker control plane for metadata, playlist scans, placeholder recovery, and history.
 
-Before 1.0, replaced hash routes and obsolete named-view URLs have no compatibility aliases. After 1.0, URL changes should preserve or deliberately migrate public links.
+YT Library is version 1.0.0; `yt_library.__version__` owns the application
+version independently of schema and plugin API versions. The CLI, browser/Admin
+headers, and status API expose that same value. `CHANGELOG.md` records releases.
+Starting with this 1.0 baseline, route or parameter changes must preserve public
+browser links or provide redirects. Previously retired pre-1.0 hash routes and
+obsolete named-view URLs do not gain compatibility aliases retroactively.
 
 Omni-search uses `/api/search` as its single read model. The server applies title/description and source filters, folds playlist and history evidence into one canonical video result, includes unresolved unavailable memberships, globally sorts and counts videos, clips, playlists, and channels, and only then returns the requested page. The browser does not merge a separate history result set.
 
