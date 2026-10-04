@@ -145,6 +145,30 @@ The unified dispatcher reads the next task from the persistent `worker_queue` be
 
 YouTube creator avatars may appear in newer watch-page data under `avatarViewModel.image.sources`, not only older `videoOwnerRenderer` or `channelThumbnailWithLinkRenderer` thumbnail shapes. Keep the channel avatar extractor broad enough to handle both.
 
+### GitHub CLI And API Access
+
+This development machine has authenticated GitHub CLI/API access as `bobfoss`
+(verified 2026-10-03), including administrative access to YTL and the five plugin
+repositories. Use `C:\Program Files\GitHub CLI\gh.exe` for repository inspection,
+GitHub API requests, and explicitly authorized publishing/administration. This
+is maintainer tooling, not an application dependency or end-user setup step.
+Recheck the active account and target repository permissions before relying on
+this access; do not print, copy, or commit authentication tokens.
+
+```powershell
+& "C:\Program Files\GitHub CLI\gh.exe" api user --jq .login
+& "C:\Program Files\GitHub CLI\gh.exe" api repos/bobfoss/YTLibrary --jq '{full_name, permissions}'
+```
+
+The canonical repositories are `bobfoss/YTLibrary`, `bobfoss/YT-comments`,
+`bobfoss/YT-live-chat`, `bobfoss/YT-pockettube`, `bobfoss/YT-subtitles`, and
+`bobfoss/YT-llm`. Local origins use these names. Python distribution names and
+plugin IDs have not changed. Existing immutable plugin catalog release URLs
+retain their working lowercase spelling for cache compatibility; do not rewrite
+published release records or artifact bytes just to change repository casing.
+Authentication supplies capability, not authorization: push only when requested,
+and keep releases and repository-setting changes within the user's request.
+
 ### Current YouTube Playlist UI
 
 YouTube's current playlist page uses `pageHeaderRenderer.content.pageHeaderViewModel.metadata.contentMetadataViewModel.metadataRows` for header facts. The row can contain `Playlist`, the visibility label, the authoritative displayed count (for example `150 videos`), and the view count. Do not rely only on older `playlistHeaderRenderer` fields; parse this newer shape when refreshing playlist metadata or validating scan completeness.
