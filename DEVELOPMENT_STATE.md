@@ -181,6 +181,11 @@ facts, transient PIDs, or other runtime-only data here.
   follow-up planning, and explicit video discovery. Discovery queues metadata
   only for newly added IDs and never creates watch occurrences. The plugin owns
   account participation, thread storage, its schema, search, and presentation.
+  Comment-history discovery queues only unchecked newly indexed participation,
+  including new comments in known threads and pending work from interrupted
+  discovery. It does not refresh every stale thread on Update. Existing threads
+  refresh alongside targeted video metadata scans after the configured minimum
+  age, or through explicit Refresh comments.
   Comments is a Videos facet with comments/no comments children and persisted
   choices; the additive `video_facet_result_cards_v1` feature lets it retain
   separate thread result cards when the comments child is enabled.
