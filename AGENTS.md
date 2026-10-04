@@ -145,6 +145,31 @@ The unified dispatcher reads the next task from the persistent `worker_queue` be
 
 YouTube creator avatars may appear in newer watch-page data under `avatarViewModel.image.sources`, not only older `videoOwnerRenderer` or `channelThumbnailWithLinkRenderer` thumbnail shapes. Keep the channel avatar extractor broad enough to handle both.
 
+### YouTube Data API Access
+
+The maintainer confirmed YouTube Data API v3 access is available for this
+project on 2026-10-03. Reuse the existing Python integration in
+`yt_library/youtube_data_api.py`, which requests the `youtube.readonly` OAuth
+scope. It currently collects the account's subscriptions and their timestamps,
+owned playlists and creation dates, and playlist items and added dates.
+
+OAuth file locations come from `youtube_oauth_client_secrets` and
+`youtube_oauth_token` in `yt_library.config.json`; their defaults are
+`youtube_oauth_client_secret.json` and `youtube_oauth_token.json`. API access is
+separate from the authenticated YouTube/My Activity cookie sessions. Verify
+the configured local credential files and current grant before relying on API
+access in a task; availability of project access does not establish that this
+checkout is authorized. Keep client secrets and tokens local and out of logs,
+chat output, and commits. Use the configured proxy for API requests.
+
+The existing CLI commands authorize the local read-only grant and collect an
+account snapshot into the library, respectively:
+
+```powershell
+.\.venv\Scripts\python.exe yt_library_manager.py authorize-youtube-data-api
+.\.venv\Scripts\python.exe yt_library_manager.py collect-youtube-data-api
+```
+
 ### GitHub CLI And API Access
 
 This development machine has authenticated GitHub CLI/API access as `bobfoss`
