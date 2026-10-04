@@ -27,8 +27,10 @@ function setup() {
     paginationParams: () => new URLSearchParams('page=2'),
     appendUrlParams: (base, params) => `${base}?${params}`,
     applyPaginationParams: () => {},
+    pluginSearchFilters: new Map(), filterPreferenceEnabled: () => false,
   };
-  load(context, 'browserCollectionPlugins', 'activeBrowserCollection', 'browserCollectionUrl');
+  load(context, 'browserPluginSearchFilters', 'applyPluginSearchFilterLocation', 'appendPluginSearchFilterParams',
+    'browserCollectionPlugins', 'activeBrowserCollection', 'browserCollectionUrl');
   return {plugin, context};
 }
 
@@ -124,4 +126,67 @@ test('Meta navigation sits between Videos and Playlists', () => {
   const groups = source.slice(start, end);
   assert.ok(groups.indexOf("sectionFor('Videos')") < groups.indexOf("sectionFor('Meta')"));
   assert.ok(groups.indexOf("sectionFor('Meta')") < groups.indexOf("sectionFor('Playlists')"));
+});
+
+test('multiple independent collections share Meta and require search registration', () => {
+  const {context, plugin} = setup();
+  const second = {id: 'second', collection: {fetch: async () => ({total: 0, results: []})}};
+  context.browserPluginStatus = id => ({browserCollection: {path: `/${id}`, label: id}});
+  context.browserSearchPlugins = () => [plugin, second];
+  assert.deepEqual(Array.from(context.browserCollectionPlugins(), value => value.id), ['example', 'second']);
+  context.browserSearchPlugins = () => [second];
+  assert.deepEqual(Array.from(context.browserCollectionPlugins(), value => value.id), ['second']);
+  context.browserSearchPlugins = () => [];
+  assert.equal(context.browserCollectionPlugins().length, 0);
+  const start = source.indexOf('function renderGroups()');
+  const groups = source.slice(start, source.indexOf('\nasync function ', start));
+  assert.equal((groups.match(/sectionFor\('Meta'\)/g) || []).length, 1);
+});
+
+test('provider options round-trip independent URL and preference state and forward API booleans', async () => {
+  const {context, plugin} = setup();
+  plugin.search = {label: 'Example', filters: [
+    {key: 'first', label: 'first', hashParam: 'example-first', disabledPreferenceKey: 'plugins.example.filters.hide_first'},
+    {key: 'second', label: 'second', hashParam: 'example-second', disabledPreferenceKey: 'plugins.example.filters.hide_second'},
+  ]};
+  context.filterPreferenceEnabled = key => key.endsWith('hide_second');
+  context.applyPluginSearchFilterLocation(plugin);
+  assert.equal(context.browserPluginSearchFilters(plugin).second, false);
+  context.applyPluginSearchFilterLocation(plugin, new URLSearchParams('example-first=0&example-second=1'));
+  assert.equal(context.browserPluginSearchFilters(plugin).first, false);
+  assert.equal(context.browserPluginSearchFilters(plugin).second, true);
+  const params = new URLSearchParams();
+  context.appendPluginSearchFilterParams(params, plugin, true);
+  assert.deepEqual(JSON.parse(params.get('plugin_filters_example')), {first: false, second: true});
+  const url = context.browserCollectionUrl(plugin);
+  assert.match(url, /example-first=0&example-second=1/);
+  context.pluginSearchFilters.clear();
+  context.applyPluginSearchFilterLocation(plugin, new URLSearchParams(url.split('?')[1]));
+  assert.equal(context.browserPluginSearchFilters(plugin).first, false);
+  let request;
+  plugin.collection.fetch = async value => { request = value; return {total: 0, results: []}; };
+  Object.assign(context, {currentPage: 1, pageSizeNumber: () => 50, browserPluginHost: () => ({})});
+  load(context, 'fetchOmniSearch');
+  await context.fetchOmniSearch('phrase');
+  assert.deepEqual(JSON.parse(JSON.stringify(request.filters)), {first: false, second: true});
+});
+
+test('rapid provider toggles reset pagination and remain inside the active collection', () => {
+  const {context, plugin} = setup();
+  plugin.search = {filters: [{key: 'first', disabledPreferenceKey: 'plugins.example.filters.hide_first'}]};
+  context.applyPluginSearchFilterLocation(plugin);
+  class Input { constructor(checked) { this.checked = checked; this.dataset = {pluginSearchOption: 'example:first'}; } }
+  const saved = [];
+  const urls = [];
+  Object.assign(context, {
+    HTMLInputElement: Input, HTMLSelectElement: class {}, currentPage: 4,
+    saveFilterPreference: (key, disabled) => saved.push([key, disabled]),
+    syncSearchUrlAndRender: () => urls.push(context.browserPluginSearchFilters(plugin).first),
+  });
+  load(context, 'handleMetaChange');
+  for (const checked of [false, true, false]) context.handleMetaChange({target: new Input(checked)});
+  assert.equal(context.currentPage, 1);
+  assert.equal(context.selected, '__collection__:example');
+  assert.deepEqual(urls, [false, true, false]);
+  assert.deepEqual(saved.at(-1), ['plugins.example.filters.hide_first', true]);
 });

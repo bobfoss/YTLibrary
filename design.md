@@ -558,6 +558,15 @@ headers, request pacing, body limits, and serialization. Plugins must keep
 server-issued commands in memory, must not log or persist them, and must not
 automatically retry a command whose delivery is uncertain.
 
+`youtube_account_identity_v1` adds `context.youtube_account_identity()`, returning
+only `channel_id` and UTC `checked_at` for the active YouTube cookie account.
+The host fetches the authenticated account settings page through its configured
+proxy and pacer, and accepts only its channel-settings avatar identity. Lookup
+is lazy, serialized, and cached for 15 minutes (failed lookups for one minute);
+cookie file replacement invalidates the cache. A missing, signed-out, or
+unrecognized account raises an error instead of retaining stale identity.
+This service does not use OAuth or expose authentication material to plugins.
+
 ### Browser assets and browser API version 2
 
 The `unified_search_cards_v1` host feature lets video-bound plugin cards join
@@ -572,6 +581,19 @@ associated source videos. Core merges descriptors into the common ordering befor
 pagination and calls `hydrate_search_results(ids, query)` only for that page;
 it must return a mapping from requested IDs to plugin-owned card payloads.
 No plugin schema or package is imported by the host.
+
+The additive `plugin_search_filters_v1` feature supports plugin-owned boolean
+search options. Python plugins declare `search_filter_keys`; opted-in methods
+`filter_videos`, `search_result_descriptors`, and `hydrate_search_results` accept
+the optional keyword `filters`. Legacy calls retain their original signatures.
+The HTTP parameter `plugin_filters_<plugin-id>` is a JSON boolean mapping,
+validated and forwarded unchanged through matching and page hydration.
+Browser `search.filters` entries declare `key`, `label`, unique `hashParam`, and
+namespaced `disabledPreferenceKey` (`plugins.<id>.*`). They default checked,
+render beside shared result controls, and persist in preferences and URLs.
+`collection.fetch` also receives a `filters` snapshot in its request object;
+the plugin maps these to its collection API. Native collection filters remain
+hidden, and provider options do not introduce another sort or Meta section.
 
 Optional browser `search.prepareResults(items, host)` hydrates cached profile or
 video presentation data for the selected page. `search.sortOptions` may contribute

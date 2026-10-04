@@ -202,6 +202,20 @@ facts, transient PIDs, or other runtime-only data here.
   controls. YT Comments uses `/comments` to browse participating threads even
   with a blank query. Blank global search still omits comment cards. All
   collection data access remains in the plugin; no schema migration is needed.
+- YT Live Chat uses the same global-card and collection contracts for
+  Meta → Live chats (`/live_chat`). One card groups each video's current capture
+  with matching message excerpts. Blank collection queries browse captures;
+  global cards require a nonblank prefix match. Presence facets and Search in
+  remain plugin-owned, and all chat authors are eligible. Broadcast end/start
+  drive Newest/Oldest, with capture completion as the missing-date fallback.
+  YTLC is independent of YT Comments and shares core's existing Meta section.
+- `plugin_search_filters_v1` carries plugin-declared boolean options through
+  global matching, hydration, and collection requests, with namespaced URLs and
+  saved preferences. YTLC uses it for own/others messages, defaulting to both.
+  `youtube_account_identity_v1` exposes the active cookie account's channel ID
+  through a lazy, host-owned account-page lookup (15-minute memory cache,
+  invalidated by cookie replacement). It neither adds OAuth nor exposes cookies;
+  unresolved identity fails selective filters explicitly. No schema change.
 - Plugin search can enrich canonical videos and clips, project bounded virtual
   videos, decorate native entity cards, add scoped channel-video tabs, and
   plan work through the host contract. It must not couple core queries or

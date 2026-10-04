@@ -46,6 +46,8 @@ PLUGIN_HOST_FEATURES = frozenset(
         "video_facet_result_cards_v1",
         "unified_search_cards_v1",
         "browser_collections_v1",
+        "plugin_search_filters_v1",
+        "youtube_account_identity_v1",
     }
 )
 PLUGIN_ENTRY_POINT_GROUP = "yt_library.plugins"
@@ -245,6 +247,7 @@ class PluginContext:
     ) = None
     _youtube_session_factory: Callable[[str], PluginYoutubeSession] | None = None
     _my_activity_session_factory: Callable[[], Any] | None = None
+    _youtube_account_identity: Callable[[], dict[str, str]] | None = None
 
     def resolve_path(self, value: str | Path) -> Path:
         path = Path(value)
@@ -289,6 +292,12 @@ class PluginContext:
         if not callable(self._my_activity_session_factory):
             raise RuntimeError("My Activity sessions are unavailable")
         return self._my_activity_session_factory()
+
+    def youtube_account_identity(self) -> dict[str, str]:
+        """Resolve the active cookie account's channel without exposing credentials."""
+        if not callable(self._youtube_account_identity):
+            raise RuntimeError("YouTube account identity is unavailable")
+        return self._youtube_account_identity()
 
 
 def _library_videos_by_id(
@@ -1265,6 +1274,12 @@ class PluginManager:
             if my_activity_cookie_file is not None else None
         )
         self._youtube_session_factory = youtube_session_factory
+        from .youtube_identity import YoutubeAccountIdentity
+
+        self._youtube_account_identity = (
+            YoutubeAccountIdentity(Path(youtube_cookie_file), str(proxy_url or ""))
+            if youtube_cookie_file is not None else None
+        )
         if self._youtube_session_factory is None and youtube_cookie_file is not None:
             self._youtube_session_factory = partial(
                 _open_plugin_youtube_session,
@@ -1375,6 +1390,7 @@ class PluginManager:
                     else None
                 ),
                 _youtube_session_factory=self._youtube_session_factory,
+                _youtube_account_identity=self._youtube_account_identity,
                 _my_activity_session_factory=self._my_activity_session_factory,
             )
             instance.start(context)
@@ -1825,10 +1841,25 @@ class PluginManager:
             raise TypeError(f"Plugin does not provide {name}: {plugin_id}")
         return handler
 
-    def search_result_descriptors(self, plugin_id: str, query: str) -> list[dict[str, Any]]:
+    def _search_filter_kwargs(self, plugin_id: str, filters: Mapping[str, bool] | None) -> dict[str, Any]:
+        if filters is None:
+            return {}
+        record = self._records.get(plugin_id)
+        allowed = getattr(record.instance, "search_filter_keys", ()) if record else ()
+        if not isinstance(filters, Mapping) or any(
+            key not in allowed or type(value) is not bool for key, value in filters.items()
+        ) or not allowed:
+            raise ValueError(f"Unsupported plugin search filters: {plugin_id}")
+        return {"filters": dict(filters)}
+
+    def search_result_descriptors(
+        self, plugin_id: str, query: str, *, filters: Mapping[str, bool] | None = None,
+    ) -> list[dict[str, Any]]:
         if not query.strip():
             return []
-        payload = self._search_card_handler(plugin_id, "search_result_descriptors")(query)
+        payload = self._search_card_handler(plugin_id, "search_result_descriptors")(
+            query, **self._search_filter_kwargs(plugin_id, filters),
+        )
         results = []
         seen = set()
         for raw in payload:
@@ -1859,10 +1890,14 @@ class PluginManager:
             seen.add(identity)
         return results
 
-    def hydrate_search_results(self, plugin_id: str, ids: list[str], query: str) -> dict[str, Any]:
+    def hydrate_search_results(
+        self, plugin_id: str, ids: list[str], query: str, *, filters: Mapping[str, bool] | None = None,
+    ) -> dict[str, Any]:
         if len(ids) > 5000:
             raise ValueError("Plugin search hydration accepts at most 5000 results")
-        payload = self._search_card_handler(plugin_id, "hydrate_search_results")(ids, query)
+        payload = self._search_card_handler(plugin_id, "hydrate_search_results")(
+            ids, query, **self._search_filter_kwargs(plugin_id, filters),
+        )
         if not isinstance(payload, Mapping) or set(payload).difference(ids):
             raise ValueError("Plugin search hydration must map requested IDs to items")
         if any(not isinstance(item, Mapping) for item in payload.values()):
@@ -1873,6 +1908,7 @@ class PluginManager:
         self,
         plugin_id: str,
         query: str,
+        *, filters: Mapping[str, bool] | None = None,
     ) -> tuple[frozenset[str], frozenset[str]]:
         record = self._records.get(plugin_id)
         if record is None:
@@ -1883,7 +1919,7 @@ class PluginManager:
         if not callable(handler):
             raise TypeError(f"Plugin does not provide a video filter: {plugin_id}")
         try:
-            payload = handler(query)
+            payload = handler(query, **self._search_filter_kwargs(plugin_id, filters))
         except Exception as exc:
             raise RuntimeError(
                 f"Plugin video filter failed: {plugin_id}: {type(exc).__name__}: {exc}"

@@ -248,26 +248,46 @@ def video_collection_filter_args(params: dict[str, list[str]]) -> dict[str, Any]
     }
 
 
+def plugin_search_filter_kwargs(params: dict[str, list[str]], plugin_id: str) -> dict[str, Any]:
+    raw = params.get(f"plugin_filters_{plugin_id}")
+    if not raw:
+        return {}
+    filters = json.loads(raw[0])
+    if not isinstance(filters, dict) or len(filters) > 20 or any(
+        not isinstance(key, str) or type(value) is not bool for key, value in filters.items()
+    ):
+        raise ValueError("Plugin search filters must be a boolean object")
+    return {"filters": filters}
+
+
 def plugin_search_card_query_data(manager: PluginManager, params: dict[str, list[str]], query: str) -> dict[str, Any]:
     descriptors = []
     errors = []
     if query.strip():
         for plugin_id in dict.fromkeys(params.get("result_plugin", [])):
             try:
-                descriptors.extend(manager.search_result_descriptors(plugin_id, query))
+                descriptors.extend(manager.search_result_descriptors(
+                    plugin_id, query, **plugin_search_filter_kwargs(params, plugin_id),
+                ))
             except Exception as exc:
                 errors.append({"id": plugin_id, "label": plugin_id, "message": str(exc)})
     return {"descriptors": descriptors, "errors": errors}
 
 
-def hydrate_plugin_search_cards(manager: PluginManager, data: dict[str, Any], query: str, errors: list[dict]) -> None:
+def hydrate_plugin_search_cards(
+    manager: PluginManager, data: dict[str, Any], query: str, errors: list[dict],
+    params: dict[str, list[str]] | None = None,
+) -> None:
     grouped: dict[str, list[dict]] = {}
     for result in data.get("results", []):
         if result.get("kind") == "plugin":
             grouped.setdefault(result["pluginId"], []).append(result)
     for plugin_id, results in grouped.items():
         try:
-            items = manager.hydrate_search_results(plugin_id, [row["id"] for row in results], query)
+            items = manager.hydrate_search_results(
+                plugin_id, [row["id"] for row in results], query,
+                **plugin_search_filter_kwargs(params or {}, plugin_id),
+            )
             for result in results:
                 if result["id"] not in items:
                     raise ValueError("A matching result is no longer available; refresh search")
@@ -317,6 +337,7 @@ def video_plugin_query_data(
         video_ids, search_match_ids = plugin_manager.filter_videos(
             plugin_id,
             query if plugin_id in search_plugin_ids else "",
+            **plugin_search_filter_kwargs(params, plugin_id),
         )
         video_facet_memberships[plugin_id] = video_ids
         if plugin_id in included_plugin_ids:
@@ -1719,7 +1740,7 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
                 )
             finally:
                 conn.close()
-            hydrate_plugin_search_cards(self.plugin_manager, data, query, search_cards["errors"])
+            hydrate_plugin_search_cards(self.plugin_manager, data, query, search_cards["errors"], params)
             self.send_json(data)
             return
         if parsed.path == "/api/history/search":

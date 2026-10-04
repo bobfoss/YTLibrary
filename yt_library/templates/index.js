@@ -75,6 +75,49 @@ const loadedBrowserPluginAssets = new Set();
 const pluginSearchVisibility = new Map();
 const pluginVideoFacetVisibility = new Map();
 const pluginClipFacetVisibility = new Map();
+const pluginSearchFilters = new Map();
+
+function browserPluginSearchFilters(plugin) {
+  return pluginSearchFilters.get(plugin.id) || {};
+}
+
+function applyPluginSearchFilterLocation(plugin, params = new URLSearchParams()) {
+  const filters = {};
+  for (const option of plugin.search?.filters || []) {
+    filters[option.key] = params.has(option.hashParam)
+      ? params.get(option.hashParam) === '1'
+      : !filterPreferenceEnabled(option.disabledPreferenceKey);
+  }
+  pluginSearchFilters.set(plugin.id, filters);
+}
+
+function appendPluginSearchFilterParams(params, plugin, api = false) {
+  const filters = browserPluginSearchFilters(plugin);
+  if (api) {
+    if (Object.keys(filters).length) params.set(`plugin_filters_${plugin.id}`, JSON.stringify(filters));
+  } else {
+    for (const option of plugin.search?.filters || []) {
+      params.set(option.hashParam, filters[option.key] ? '1' : '0');
+    }
+  }
+}
+
+function browserSearchFilterOptionsHtml(collection = null) {
+  const plugins = collection ? [collection] : browserSearchPlugins().filter(plugin => (
+    browserPluginSearchFieldEnabled(plugin) && searchKindEnabled('videos')
+  ));
+  return plugins.map(plugin => {
+    const options = plugin.search?.filters || [];
+    if (!options.length) return '';
+    const filters = browserPluginSearchFilters(plugin);
+    return `<div class="filters" aria-label="${escapeHtml(plugin.search.label)} filters">
+      <span>${escapeHtml(plugin.search.label)}:</span>
+      ${options.map(option => `<label class="filter"><input type="checkbox"
+        data-plugin-search-option="${escapeHtml(plugin.id)}:${escapeHtml(option.key)}"
+        ${filters[option.key] ? 'checked' : ''}> ${escapeHtml(option.label)}</label>`).join('')}
+    </div>`;
+  }).join('');
+}
 
 function browserSearchFieldDefinition(plugin) {
   const definition = plugin?.search?.searchField;
@@ -199,6 +242,15 @@ function registerBrowserPlugin(plugin) {
   if (!/^[a-z][a-z0-9_-]*$/.test(pluginId)) throw new TypeError('Plugin id is invalid');
   if (browserPlugins.has(pluginId)) throw new Error(`Plugin is already registered: ${pluginId}`);
   const searchFieldRegistration = validateBrowserPluginSearchField(plugin);
+  const optionKeys = new Set();
+  for (const option of plugin.search?.filters || []) {
+    if (!/^[a-z][a-z0-9_-]*$/.test(option?.key || '') || optionKeys.has(option.key)
+      || !option.label || !option.hashParam || !option.disabledPreferenceKey?.startsWith(`plugins.${pluginId}.`)) {
+      throw new TypeError(`Plugin search filter is invalid: ${pluginId}`);
+    }
+    optionKeys.add(option.key);
+  }
+  applyPluginSearchFilterLocation(plugin);
   validateBrowserChannelVideoTabs(plugin);
   if (plugin.entityCards) EntityCardExtensions.validateDefinition(plugin.entityCards);
   if (plugin.search?.resultPresentation) {
@@ -239,6 +291,7 @@ window.YTLibraryBrowserPlugins = Object.freeze({
     searchResultPresentations: 1,
     unifiedSearchCards: 1,
     browserCollections: 1,
+    pluginSearchFilters: 1,
   }),
   register: registerBrowserPlugin,
 });
@@ -272,6 +325,7 @@ function browserCollectionUrl(plugin, includePagination = true) {
   const params = includePagination ? paginationParams() : new URLSearchParams();
   if (search.value.trim()) params.set('q', search.value.trim());
   params.set('sort', searchResultsSort);
+  appendPluginSearchFilterParams(params, plugin);
   return appendUrlParams(browserPluginStatus(plugin.id).browserCollection.path, params);
 }
 
@@ -371,6 +425,8 @@ function browserClipFacetSearchActive(plugin) {
 
 function browserPluginStateKey(plugin) {
   const parts = [plugin.id];
+  const filters = browserPluginSearchFilters(plugin);
+  if (Object.keys(filters).length) parts.push(JSON.stringify(filters));
   if (browserVideoFacetDefinition(plugin)) {
     const state = browserVideoFacetState(plugin);
     parts.push(`v${state.present ? '1' : '0'}${state.absent ? '1' : '0'}`);
@@ -1323,6 +1379,13 @@ function setLocalFilterPreference(preferenceKey, enabled) {
     item => item.search.preferenceKey === preferenceKey
   );
   if (plugin) pluginSearchVisibility.set(plugin.id, enabled);
+  for (const provider of browserSearchPlugins()) {
+    for (const option of provider.search?.filters || []) {
+      if (option.disabledPreferenceKey === preferenceKey) {
+        browserPluginSearchFilters(provider)[option.key] = !enabled;
+      }
+    }
+  }
   for (const videoFacetPlugin of browserVideoFilterPlugins()) {
     const definition = browserVideoFacetDefinition(videoFacetPlugin);
     const state = browserVideoFacetState(videoFacetPlugin);
@@ -1649,6 +1712,7 @@ function searchUrl() {
     }
   }
   for (const plugin of browserSearchPlugins()) {
+    appendPluginSearchFilterParams(params, plugin);
     const videoFacet = browserVideoFacetDefinition(plugin);
     const clipFacet = browserClipFacetDefinition(plugin);
     if (videoFacet) {
@@ -1798,6 +1862,7 @@ function applySearchLocation(pathname, params) {
     }
   }
   for (const plugin of browserSearchPlugins()) {
+    applyPluginSearchFilterLocation(plugin, params);
     const videoFacet = browserVideoFacetDefinition(plugin);
     const clipFacet = browserClipFacetDefinition(plugin);
     if (videoFacet) {
@@ -1889,6 +1954,7 @@ function selectionFromLocation() {
   ));
   if (collection) {
     search.value = params.get('q') || '';
+    applyPluginSearchFilterLocation(collection, params);
     applyPaginationParams(params);
     const sorts = collection.collection.sorts || ['newest', 'oldest'];
     const requestedSort = params.get('sort') || sortPreferences.meta;
@@ -4918,7 +4984,7 @@ async function fetchOmniSearch(query, page = currentPage) {
   const collection = activeBrowserCollection();
   if (collection) {
     const payload = await collection.collection.fetch(
-      { query, limit, offset, sort: searchResultsSort },
+      { query, limit, offset, sort: searchResultsSort, filters: { ...browserPluginSearchFilters(collection) } },
       browserPluginHost(collection.id),
     );
     return {
@@ -4986,6 +5052,7 @@ async function fetchOmniSearch(query, page = currentPage) {
     .filter(Boolean)
     .join(',');
   for (const plugin of browserServerSearchPlugins(query)) coreParams.append('result_plugin', plugin.id);
+  for (const plugin of browserSearchPlugins()) appendPluginSearchFilterParams(coreParams, plugin, true);
   const videoPluginFacetCountsKey = JSON.stringify([
     query,
     searchFieldsValue,
@@ -5002,7 +5069,7 @@ async function fetchOmniSearch(query, page = currentPage) {
     metaFilterParamValue(searchMetaVisibility.membership),
     metaFilterParamValue(searchMetaVisibility.uploaderCategory),
     metaFilterParamValue(searchMetaVisibility.videoNotes),
-    query ? browserVideoFilterPlugins().map(browserVideoFacetSearchActive) : [],
+    query ? browserVideoFilterPlugins().map(plugin => [browserVideoFacetSearchActive(plugin), browserPluginSearchFilters(plugin)]) : [],
   ]);
   const clipPluginFacetCountsKey = JSON.stringify([
     query,
@@ -5276,6 +5343,7 @@ async function fetchVideoCollection({
   if (notes) params.set('notes', metaFilterParamValue(notes));
   if (useSearchFacets) {
     for (const plugin of browserVideoFilterPlugins()) {
+      appendPluginSearchFilterParams(params, plugin, true);
       const state = browserVideoFacetState(plugin);
       params.append('video_facet_plugin', plugin.id);
       if (state.present && !state.absent) {
@@ -6735,7 +6803,7 @@ async function renderCurrentView() {
       showSearchProgress({ preserveContent: true });
     } else {
       title.textContent = '';
-      meta.textContent = '';
+      meta.innerHTML = browserSearchFilterOptionsHtml(collection);
       if (!collection) renderSearchMetaFilters();
       showSearchProgress();
       await new Promise(resolve => requestAnimationFrame(resolve));
@@ -6784,7 +6852,7 @@ async function renderCurrentView() {
     meta.innerHTML = rightPanelListMetaHtml(totalLabel, {
       showLayout: true,
       sortHtml: searchResultsSortHtml(payload.counts?.plugins, collection?.collection.sorts),
-    });
+    }) + browserSearchFilterOptionsHtml(collection);
     appendPluginSearchWarnings(meta, pluginErrors);
     if (!collection) renderSearchMetaFilters(payload);
     const pageInfo = remotePageInfo(total, rows.length, remoteLimit);
@@ -7557,6 +7625,17 @@ function handleMetaChange(event) {
     return;
   }
   if (!(target instanceof HTMLInputElement)) return;
+  if (target.dataset.pluginSearchOption) {
+    const [pluginId, key] = target.dataset.pluginSearchOption.split(':');
+    const plugin = browserSearchPlugins().find(item => item.id === pluginId);
+    const option = plugin?.search?.filters?.find(item => item.key === key);
+    if (!option) return;
+    browserPluginSearchFilters(plugin)[key] = target.checked;
+    saveFilterPreference(option.disabledPreferenceKey, !target.checked);
+    currentPage = 1;
+    syncSearchUrlAndRender();
+    return;
+  }
   const searchFilterInteraction = (
     target.dataset.searchKindFilter
     || target.dataset.searchPluginFacetFilter

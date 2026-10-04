@@ -13,6 +13,17 @@ from tests.test_plugins import FakeEntryPoint, FakePlugin
 
 
 class PluginServiceTests(unittest.TestCase):
+    def test_account_identity_is_host_owned_lazy_and_exposed_to_plugins(self):
+        plugin = FakePlugin()
+        identity = Mock(return_value={"channel_id": "UC" + "a" * 22, "checked_at": "2026-10-03T00:00:00Z"})
+        with patch("yt_library.youtube_identity.YoutubeAccountIdentity", return_value=identity) as factory:
+            PluginManager({"plugins": {"subtitles": {"enabled": True}}},
+                          entry_points=[FakeEntryPoint(lambda: plugin)],
+                          youtube_cookie_file=Path("cookies.txt"), proxy_url="configured-proxy")
+            identity.assert_not_called()
+            self.assertEqual(plugin.context.youtube_account_identity()["channel_id"], "UC" + "a" * 22)
+            factory.assert_called_once_with(Path("cookies.txt"), "configured-proxy")
+
     def test_discovery_adds_real_identity_without_watch_and_preserves_known_video(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "library.sqlite3"

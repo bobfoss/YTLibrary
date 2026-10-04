@@ -134,6 +134,34 @@ class PluginSearchBoundaryTests(unittest.TestCase):
         self.assertNotIn("error", page["results"][0])
         self.assertEqual(page["results"][1]["error"], "unavailable")
 
+    def test_optional_filters_reach_matching_and_hydration_without_breaking_legacy_plugins(self):
+        self.plugin.search_filter_keys = {"first", "second"}
+        self.plugin.search_result_descriptors.return_value = [self.descriptor]
+        self.plugin.hydrate_search_results.return_value = {"one": {"text": "Selected"}}
+        self.plugin.filter_videos.return_value = {"video_ids": ["abcdefghijk"], "search_match_ids": ["abcdefghijk"]}
+        filters = {"first": True, "second": False}
+        params = {"result_plugin": ["example"], "video_search_plugin": ["example"],
+                  "plugin_filters_example": ['{"first":true,"second":false}']}
+        data = server.plugin_search_card_query_data(self.manager, params, "match")
+        self.assertEqual(len(data["descriptors"]), 1)
+        self.plugin.search_result_descriptors.assert_called_once_with("match", filters=filters)
+        server.video_plugin_query_data(self.manager, params, "match")
+        self.plugin.filter_videos.assert_called_once_with("match", filters=filters)
+        page = {"results": [{"kind": "plugin", "pluginId": "example", "id": "one"}]}
+        server.hydrate_plugin_search_cards(self.manager, page, "match", [], params)
+        self.plugin.hydrate_search_results.assert_called_once_with(["one"], "match", filters=filters)
+        for bad in ({"unknown": True}, {"first": 1}, {"first": "false"}):
+            with self.assertRaises(ValueError):
+                self.manager.search_result_descriptors("example", "match", filters=bad)
+        self.plugin.search_filter_keys = ()
+        with self.assertRaises(ValueError):
+            self.manager.search_result_descriptors("example", "match", filters=filters)
+        self.manager.search_result_descriptors("example", "match")
+        self.plugin.search_result_descriptors.assert_called_with("match")
+        for raw in ('[]', '{"first":1}', 'null', 'bad json'):
+            with self.assertRaises(ValueError):
+                server.plugin_search_filter_kwargs({"plugin_filters_example": [raw]}, "example")
+
 
 if __name__ == "__main__":
     unittest.main()
