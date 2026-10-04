@@ -162,8 +162,34 @@ access in a task; availability of project access does not establish that this
 checkout is authorized. Keep client secrets and tokens local and out of logs,
 chat output, and commits. Use the configured proxy for API requests.
 
+The existing local reference grant is stored separately from those runtime
+defaults:
+
+- OAuth desktop client: `.codex/reference/youtube_oauth_client_secret.json`
+- Saved access/refresh token: `.codex/reference/youtube_oauth_token.json`
+
+Both files are Git-ignored. Their presence, the saved `youtube.readonly` scope,
+and refresh-token presence were verified on 2026-10-03 without exposing secret
+values; this was not a live validation of the grant. The configured default
+OAuth files are absent, so normal Update does not currently use this reference
+grant. Keep that separation: the user retained API access for reference work,
+not as a required runtime dependency or a replacement for adaptive direct-page
+live-stream checks. Do not move these files into the runtime defaults or enable
+API collection merely because credentials exist.
+
+For explicitly requested read-only API probes, pass the reference paths to
+`build_youtube_data_service(client_secrets_path, token_path, proxy_url)` in
+`yt_library/youtube_data_api.py`, using `configured_proxy(config)`. The existing
+loader refreshes an expired access token when a refresh token is available and
+saves the refreshed credentials back to the supplied token file. Reuse this
+grant instead of opening a new consent flow routinely; if refresh is rejected,
+report that reauthorization is needed. Keep checks bounded and do not print
+credentials or raw authentication failures that might contain sensitive data.
+
 The existing CLI commands authorize the local read-only grant and collect an
-account snapshot into the library, respectively:
+account snapshot into the library, respectively. Both accept `--client-secrets`
+and `--token` overrides. The collection command writes library data and is not
+an authentication-only check; do not run it just to test the reference token:
 
 ```powershell
 .\.venv\Scripts\python.exe yt_library_manager.py authorize-youtube-data-api
