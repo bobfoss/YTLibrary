@@ -632,6 +632,35 @@ test('compact channel cards retain only a right-aligned YouTube link', () => {
   assert.match(indexHtml, /\.search-grid\.layout-compact \.channel-card-links \{ justify-content: flex-end; \}/);
 });
 
+test('channel detail titles link to YouTube with the video title treatment', () => {
+  const indexSource = source('index.js');
+  const context = {
+    escapeHtml: videoCardHelpers().escapeHtml,
+    document: {
+      createElement() {
+        return { children: [], append(child) { this.children.push(child); } };
+      },
+    },
+    isSubscribedChannel: () => false,
+    annotationCardOptions: () => ({}),
+    externalLinkSvg: () => '',
+    channelNotificationHtml: () => '',
+    channelDatesHtml: () => '',
+    featuredChannelsHtml: () => '',
+  };
+  vm.runInNewContext(namedFunctionSource(indexSource, 'channelDetailCardFor'), context);
+  const htmlFor = channel => context.channelDetailCardFor(channel).children[0].innerHTML;
+  const suppliedUrl = htmlFor({
+    channel_id: 'UCexample', title: 'Music & <More>', url: 'https://www.youtube.com/@example',
+  });
+  assert.match(suppliedUrl, /<a class="video-title playlist-title" href="https:\/\/www\.youtube\.com\/@example" target="_blank" rel="noreferrer">Music &amp; &lt;More&gt;<\/a>/);
+  assert.match(htmlFor({ channel_id: 'UC example' }), /class="video-title playlist-title" href="https:\/\/www\.youtube\.com\/channel\/UC%20example"/);
+  const noUrl = htmlFor({ title: 'Unresolved channel' });
+  assert.match(noUrl, /<div class="video-title">Unresolved channel<\/div>/);
+  assert.doesNotMatch(noUrl, /<a class="video-title/);
+  assert.match(namedFunctionSource(indexSource, 'channelCardFor'), /localChannelHref\(channelReference\)/);
+});
+
 test('channel cards render only exceptional persisted statuses', () => {
   const indexSource = source('index.js');
   const channelCardSource = namedFunctionSource(indexSource, 'channelCardFor');

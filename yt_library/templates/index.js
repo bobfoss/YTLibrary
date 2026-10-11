@@ -6065,7 +6065,7 @@ function channelDetailCardFor(channel) {
       <div>${avatar}</div>
       <div>
         <div class="title-row">
-          <div class="video-title">${escapeHtml(titleText)}</div>
+          ${youtubeUrl ? `<a class="video-title playlist-title" href="${escapeHtml(youtubeUrl)}" target="_blank" rel="noreferrer">${escapeHtml(titleText)}</a>` : `<div class="video-title">${escapeHtml(titleText)}</div>`}
           <div class="channel-external-links">
             ${youtubeUrl ? `<a class="playlist-link" href="${escapeHtml(youtubeUrl)}" target="_blank" rel="noreferrer">YouTube</a><a class="external-link" href="${escapeHtml(youtubeUrl)}" target="_blank" rel="noreferrer" title="Open on YouTube" aria-label="Open ${escapeHtml(titleText)} on YouTube">${externalLinkSvg()}</a>` : ''}
             ${archivarixUrl ? `<a class="playlist-link" href="${escapeHtml(archivarixUrl)}" target="_blank" rel="noreferrer">Archivarix</a><a class="external-link" href="${escapeHtml(archivarixUrl)}" target="_blank" rel="noreferrer" title="Open on Archivarix" aria-label="Open ${escapeHtml(titleText)} on Archivarix">${externalLinkSvg()}</a>` : ''}
