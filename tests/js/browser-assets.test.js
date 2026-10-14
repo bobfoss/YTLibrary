@@ -941,7 +941,7 @@ test('queue maintenance controls keep rebuild advanced and rely on automatic sta
 test('search filter bootstrap defers leaves until facet counts arrive', () => {
   const indexSource = source('index.js');
 
-  assert.match(indexSource, /const countsReady = counts !== null && counts !== undefined/);
+  assert.match(indexSource, /const countsReady = !countsAreExact \|\| \(counts !== null && counts !== undefined\)/);
   assert.match(indexSource, /\$\{countsReady \? metaFilterChildrenHtml\(\{/);
   assert.match(indexSource, /\$\{expanded && countsReady \? '' : 'hidden'\}/);
   assert.match(indexSource, /const countsPending = metaCounts === null \|\| metaCounts === undefined/);

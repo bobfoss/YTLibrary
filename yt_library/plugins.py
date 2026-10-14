@@ -48,6 +48,7 @@ PLUGIN_HOST_FEATURES = frozenset(
         "browser_collections_v1",
         "plugin_search_filters_v1",
         "youtube_account_identity_v1",
+        "partial_video_search_v1",
     }
 )
 PLUGIN_ENTRY_POINT_GROUP = "yt_library.plugins"
@@ -91,6 +92,14 @@ PLUGIN_YTDLP_HOST_OPTIONS = frozenset(
         "source_address",
     }
 )
+
+
+class PartialVideoSearchError(RuntimeError):
+    """A provider can establish presence, but cannot safely match its text."""
+
+    def __init__(self, message: str, video_ids: frozenset[str]) -> None:
+        super().__init__(message)
+        self.video_ids = video_ids
 
 
 class PluginYoutubeSession:
@@ -1933,6 +1942,11 @@ class PluginManager:
         )
         if not search_match_ids.issubset(video_ids):
             raise ValueError("Plugin search matches must be included in its video filter")
+        search_error = payload.get("search_error")
+        if search_error is not None:
+            if not isinstance(search_error, str) or not search_error.strip() or search_match_ids:
+                raise ValueError("An unavailable plugin search must explain its failure and omit matches")
+            raise PartialVideoSearchError(search_error, video_ids)
         return video_ids, search_match_ids
 
     def filter_clips(

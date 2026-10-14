@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 import threading
 import time
@@ -46,24 +47,28 @@ class YoutubeAccountIdentity:
         self.cookie_file = cookie_file
         self.proxy_url = proxy_url
         self._lock = threading.Lock()
-        self._key: tuple[int, int, int] | None = None
+        self._key: tuple[str, str, bytes] | None = None
         self._expires = 0.0
         self._value: dict[str, str] = {}
+
+    def _cookie_key(self) -> tuple[str, str, bytes]:
+        return (str(self.cookie_file.resolve()), self.proxy_url,
+                hashlib.sha256(self.cookie_file.read_bytes()).digest())
 
     def __call__(self) -> dict[str, str]:
         with self._lock:
             try:
-                stat = self.cookie_file.stat()
+                key = self._cookie_key()
             except OSError:
+                self._key, self._value, self._expires = None, {}, 0.0
                 raise RuntimeError("Configured YouTube cookie file is unavailable") from None
-            key = (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size)
             if key == self._key and time.monotonic() < self._expires:
                 if not self._value:
-                    raise RuntimeError("YouTube account identity is unavailable; check the configured cookie and retry")
+                    raise RuntimeError("YouTube account identity is unavailable; check the configured cookie and proxy, then retry after one minute")
                 return dict(self._value)
             self._key = key
             self._value = {}
-            self._expires = time.monotonic() + 60
+            self._expires = 0.0
             try:
                 jar = load_cookie_jar(self.cookie_file)
                 opener = urllib.request.build_opener(
@@ -76,8 +81,12 @@ class YoutubeAccountIdentity:
                 if not youtube_page_is_authenticated(page):
                     raise RuntimeError("YouTube account session is signed out")
                 channel_id = account_channel_id(extract_json_assignment(page, "ytInitialData"))
+                if self._cookie_key() != key:
+                    self._key = None
+                    raise RuntimeError("Configured YouTube cookie changed during verification")
             except Exception:
-                raise RuntimeError("YouTube account identity is unavailable; check the configured cookie and retry") from None
+                self._expires = time.monotonic() + 60
+                raise RuntimeError("YouTube account identity is unavailable; check the configured cookie and proxy, then retry after one minute") from None
             self._value = {"channel_id": channel_id, "checked_at": utc_now()}
             self._expires = time.monotonic() + 15 * 60
             return dict(self._value)

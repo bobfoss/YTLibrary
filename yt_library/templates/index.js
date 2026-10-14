@@ -943,8 +943,10 @@ function cachedRequest(cache, key, load, maxEntries) {
     const current = cache.get(key);
     if (!current || current.promise === promise) {
       cache.delete(key);
-      cache.set(key, { data: payload, promise: null });
-      trimRequestCache(cache, maxEntries);
+      if (!payload.resultsIncomplete && !payload.pluginErrors?.length) {
+        cache.set(key, { data: payload, promise: null });
+        trimRequestCache(cache, maxEntries);
+      }
     }
     return payload;
   }).catch(error => {
@@ -2807,7 +2809,7 @@ function pagerHtml(pageInfo, includePageSize = false) {
   ` : '';
   return `
     ${sizeHtml}
-    <span>Showing ${pageInfo.start}-${pageInfo.end} of ${pageInfo.total}</span>
+    <span>Showing ${pageInfo.start}-${pageInfo.end} of ${pageInfo.total}${pageInfo.resultsIncomplete ? ' (incomplete)' : ''}</span>
     ${pageJumpHtml(pageInfo)}
     ${pageGotoHtml(pageInfo)}
   `;
@@ -4097,6 +4099,7 @@ function searchMetaFiltersHtml(
   playlistMembershipCounts,
   uploaderCategoryCounts,
   resultCounts,
+  countsAreExact = true,
 ) {
   renderedMetaFilterTreeGroups.clear();
   const facetHtml = ({
@@ -4117,10 +4120,10 @@ function searchMetaFiltersHtml(
       definitions,
       childFacets,
     });
-    const countsReady = counts !== null && counts !== undefined;
+    const countsReady = !countsAreExact || (counts !== null && counts !== undefined);
     const visibleDefinitions = visibleMetaFilterDefinitions(
       visibility,
-      searchKindEnabled(kind) ? counts : null,
+      searchKindEnabled(kind) && countsAreExact ? counts : null,
       definitions,
     );
     if (!visibleDefinitions.length) return '';
@@ -4273,6 +4276,7 @@ function renderSearchMetaFilters({
   playlistMembershipCounts = null,
   uploaderCategoryCounts = null,
   counts = null,
+  countsAreExact = true,
 } = {}) {
   const countsPending = metaCounts === null || metaCounts === undefined;
   renderedSearchFilterPayload = {
@@ -4285,6 +4289,7 @@ function renderSearchMetaFilters({
     playlistMembershipCounts,
     uploaderCategoryCounts,
     counts,
+    countsAreExact,
   };
   renderedSearchFilterContext = searchContextKind();
   syncUploaderCategoryVisibility(uploaderCategoryCounts);
@@ -4299,6 +4304,7 @@ function renderSearchMetaFilters({
     playlistMembershipCounts,
     uploaderCategoryCounts,
     counts,
+    countsAreExact,
   );
   const sections = new Map(
     [...template.content.querySelectorAll('[data-search-filter-section]')]
@@ -4334,6 +4340,12 @@ function renderSearchMetaFilters({
     syncSearchKindFilter(kind, true, countsPending);
   }
   updateSearchMetaProgress();
+  if (!countsAreExact) {
+    for (const count of searchFilterRegion.querySelectorAll('.meta-filter-count, [data-search-kind-count]')) {
+      count.textContent = '?';
+      count.title = 'Counts are unavailable while search results are incomplete';
+    }
+  }
 }
 
 function applySearchFilterTreeNodeState(nodeId) {
@@ -4971,7 +4983,9 @@ function appendPluginSearchWarnings(container, errors) {
   for (const pluginError of errors) {
     const warning = document.createElement('div');
     warning.className = 'status plugin-search-warning';
-    warning.textContent = `${pluginError.label} unavailable: ${pluginError.message}`;
+    warning.setAttribute('role', 'status');
+    const label = browserSearchPlugin(pluginError.id)?.search?.label || pluginError.label;
+    warning.textContent = `${label} unavailable: ${pluginError.message} Use Refresh to retry. Results and filter counts may be incomplete.`;
     container.append(warning);
   }
 }
@@ -5122,7 +5136,10 @@ async function fetchOmniSearch(query, page = currentPage) {
     requestParams.set('limit', String(Math.max(1, pluginPayload.remaining)));
     requestParams.set('offset', String(pluginPayload.coreOffset));
     const response = await fetch(`/api/search?${requestParams}`, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`Search failed: ${response.status}`);
+    if (!response.ok) {
+      const detail = await response.json().catch(() => ({}));
+      throw new Error(detail.message || detail.error || `Search failed: ${response.status}`);
+    }
     const corePayload = await response.json();
     const coreRows = pluginPayload.remaining
       ? (corePayload.results || []).slice(0, pluginPayload.remaining)
@@ -5141,6 +5158,9 @@ async function fetchOmniSearch(query, page = currentPage) {
       pluginErrors: [...(corePayload.pluginErrors || []), ...pluginPayload.errors],
       results: [...pluginPayload.results, ...coreRows],
     };
+    if (payload.pluginErrors.length) {
+      return { ...payload, resultsIncomplete: true, totalIsExact: false, countsAreExact: false };
+    }
     if (!metaCountsCache.has(metaCountsKey)) {
       const stableMetaCounts = Object.fromEntries(
         Object.entries(payload.metaCounts || {}).map(([group, counts]) => [group, { ...counts }])
@@ -6818,12 +6838,19 @@ async function renderCurrentView() {
       stopSearchProgress();
       searchResultsRendered = false;
       title.textContent = 'Search unavailable';
+      meta.innerHTML = rightPanelListMetaHtml('Results unavailable', {
+        showLayout: true,
+        sortHtml: searchResultsSortHtml({}, collection?.collection.sorts),
+      }) + browserSearchFilterOptionsHtml(collection);
+      if (!collection) renderSearchMetaFilters({ ...renderedSearchFilterPayload, countsAreExact: false });
+      grid.replaceChildren();
+      renderPager({ total: 0 });
       empty.hidden = false;
       empty.textContent = error.message;
       return;
     }
     if (generation !== renderGeneration) return;
-    if (searchResultsSort === 'most_liked'
+    if (!payload.resultsIncomplete && searchResultsSort === 'most_liked'
       && !pluginSearchSortOptions(payload.counts?.plugins).some(option => option.value === searchResultsSort)) {
       searchResultsSort = collection ? 'newest' : defaultSearchResultsSort(query);
       searchSortExplicit = false;
@@ -6848,7 +6875,9 @@ async function renderCurrentView() {
     searchResultsRendered = true;
     title.textContent = collection ? browserPluginStatus(collection.id).browserCollection.label : '';
     if (collection) setDocumentTitle(title.textContent);
-    const totalLabel = `${total.toLocaleString()}${payload.totalIsExact === false ? '+' : ''} results`;
+    const totalLabel = payload.resultsIncomplete
+      ? `${total.toLocaleString()} results (incomplete)`
+      : `${total.toLocaleString()}${payload.totalIsExact === false ? '+' : ''} results`;
     meta.innerHTML = rightPanelListMetaHtml(totalLabel, {
       showLayout: true,
       sortHtml: searchResultsSortHtml(payload.counts?.plugins, collection?.collection.sorts),
@@ -6856,7 +6885,7 @@ async function renderCurrentView() {
     appendPluginSearchWarnings(meta, pluginErrors);
     if (!collection) renderSearchMetaFilters(payload);
     const pageInfo = remotePageInfo(total, rows.length, remoteLimit);
-    renderPager(pageInfo);
+    renderPager({ ...pageInfo, resultsIncomplete: Boolean(payload.resultsIncomplete) });
     applyCardLayout('search');
     const cards = rows.map(result => searchResultCardFor(result, {
       query,
@@ -6878,8 +6907,9 @@ async function renderCurrentView() {
     await decoration;
     if (generation !== renderGeneration) return;
     empty.hidden = rows.length !== 0;
-    empty.textContent = 'No results match.';
-    scheduleAdjacentPagePrefetch(pageInfo, page => fetchOmniSearch(query, page));
+    empty.textContent = payload.resultsIncomplete
+      ? 'No available results. Some search sources are unavailable.' : 'No results match.';
+    if (!payload.resultsIncomplete) scheduleAdjacentPagePrefetch(pageInfo, page => fetchOmniSearch(query, page));
     return;
   }
   if (selected.startsWith('__playlist__:')) {

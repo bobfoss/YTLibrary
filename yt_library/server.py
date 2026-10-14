@@ -124,7 +124,7 @@ from .core import (
 )
 from .network import ProxyUnavailableError, validated_socks5_proxy_url
 from .request_pacing import configure_request_pacing
-from .plugins import PLUGIN_JSON_REQUEST_BYTES, PluginManager
+from .plugins import PLUGIN_JSON_REQUEST_BYTES, PartialVideoSearchError, PluginManager
 from .queries import (
     channel_detail_data,
     channel_list_data,
@@ -260,11 +260,16 @@ def plugin_search_filter_kwargs(params: dict[str, list[str]], plugin_id: str) ->
     return {"filters": filters}
 
 
-def plugin_search_card_query_data(manager: PluginManager, params: dict[str, list[str]], query: str) -> dict[str, Any]:
+def plugin_search_card_query_data(
+    manager: PluginManager, params: dict[str, list[str]], query: str,
+    *, unavailable_plugins: Iterable[str] = (),
+) -> dict[str, Any]:
     descriptors = []
     errors = []
     if query.strip():
         for plugin_id in dict.fromkeys(params.get("result_plugin", [])):
+            if plugin_id in unavailable_plugins:
+                continue
             try:
                 descriptors.extend(manager.search_result_descriptors(
                     plugin_id, query, **plugin_search_filter_kwargs(params, plugin_id),
@@ -297,7 +302,10 @@ def hydrate_plugin_search_cards(
             for result in results:
                 result["error"] = str(exc)
     if errors:
-        data["pluginErrors"] = errors
+        data["pluginErrors"] = list({(error["id"], error["message"]): error for error in errors}.values())
+        data["resultsIncomplete"] = True
+        data["totalIsExact"] = False
+        data["countsAreExact"] = False
 
 
 def video_plugin_query_data(
@@ -306,6 +314,7 @@ def video_plugin_query_data(
     query: str,
     *,
     include_projections: bool = False,
+    isolate_errors: bool = False,
 ) -> dict[str, Any]:
     included_plugin_ids = set(params.get("video_filter_plugin") or [])
     excluded_plugin_ids = set(params.get("video_exclude_filter_plugin") or [])
@@ -333,12 +342,29 @@ def video_plugin_query_data(
     video_search_match_ids: set[str] = set()
     video_search_match_memberships: dict[str, frozenset[str]] = {}
     video_projections: dict[str, dict[str, dict[str, str]]] = {}
+    errors: list[dict[str, str]] = []
     for plugin_id in facet_plugin_ids:
-        video_ids, search_match_ids = plugin_manager.filter_videos(
-            plugin_id,
-            query if plugin_id in search_plugin_ids else "",
-            **plugin_search_filter_kwargs(params, plugin_id),
-        )
+        try:
+            video_ids, search_match_ids = plugin_manager.filter_videos(
+                plugin_id,
+                query if plugin_id in search_plugin_ids else "",
+                **plugin_search_filter_kwargs(params, plugin_id),
+            )
+        except PartialVideoSearchError as exc:
+            if not isolate_errors:
+                raise
+            video_ids, search_match_ids = exc.video_ids, frozenset()
+            errors.append({"id": plugin_id, "label": plugin_id, "message": str(exc)})
+        except Exception as exc:
+            if not isolate_errors:
+                raise
+            if plugin_id in included_plugin_ids or plugin_id in excluded_plugin_ids:
+                raise RuntimeError(
+                    f"The selected {plugin_id} video filter cannot be applied. "
+                    f"No results are shown. Retry or change that filter. {exc}"
+                ) from exc
+            errors.append({"id": plugin_id, "label": plugin_id, "message": str(exc)})
+            continue
         video_facet_memberships[plugin_id] = video_ids
         if plugin_id in included_plugin_ids:
             video_id_filters.append(video_ids)
@@ -355,10 +381,12 @@ def video_plugin_query_data(
         if plugin_id in search_plugin_ids and query.strip():
             projection_ids = projection_ids.union(search_match_ids)
         if projection_ids:
-            video_projections[plugin_id] = plugin_manager.project_videos(
-                plugin_id,
-                projection_ids,
-            )
+            try:
+                video_projections[plugin_id] = plugin_manager.project_videos(plugin_id, projection_ids)
+            except Exception as exc:
+                if not isolate_errors:
+                    raise
+                errors.append({"id": plugin_id, "label": plugin_id, "message": str(exc)})
     return {
         "video_id_filters": video_id_filters,
         "video_id_exclusion_filters": video_id_exclusion_filters,
@@ -366,6 +394,7 @@ def video_plugin_query_data(
         "video_search_match_ids": video_search_match_ids,
         "video_search_match_memberships": video_search_match_memberships,
         "video_projections": video_projections,
+        "errors": errors,
     }
 
 
@@ -1622,13 +1651,13 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
             )
             search_fields = query_set_param(params, "search_fields")
             sort = (params.get("sort") or [None])[0]
-            search_cards = plugin_search_card_query_data(self.plugin_manager, params, query)
             try:
                 plugin_data = video_plugin_query_data(
                     self.plugin_manager,
                     params,
                     query,
                     include_projections=True,
+                    isolate_errors=True,
                 )
             except (LookupError, RuntimeError, TypeError, ValueError) as exc:
                 self.send_json(
@@ -1636,6 +1665,11 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
                     status=503,
                 )
                 return
+            search_cards = plugin_search_card_query_data(
+                self.plugin_manager, params, query,
+                unavailable_plugins={error["id"] for error in plugin_data["errors"]},
+            )
+            search_cards["errors"].extend(plugin_data["errors"])
             try:
                 limit = max(1, min(5000, int((params.get("limit") or ["100"])[0] or 100)))
             except ValueError:

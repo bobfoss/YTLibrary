@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.cookiejar
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -73,3 +74,66 @@ class YoutubeIdentityTests(unittest.TestCase):
         identity = YoutubeAccountIdentity(Path("this-cookie-does-not-exist.txt"))
         with self.assertRaisesRegex(RuntimeError, "cookie file is unavailable"):
             identity()
+
+    def test_failed_refresh_discards_old_identity_and_retries_after_backoff(self):
+        with tempfile.TemporaryDirectory() as temp:
+            cookie = Path(temp) / "cookies.txt"
+            cookie.write_text("test", encoding="utf-8")
+            identity = YoutubeAccountIdentity(cookie, "configured-proxy")
+            with patch("yt_library.youtube_identity.load_cookie_jar", return_value=http.cookiejar.CookieJar()), \
+                 patch("yt_library.youtube_identity.socks5_proxy_handlers", return_value=[]) as proxy, \
+                 patch("yt_library.youtube_identity.request_bytes", return_value=page()) as request, \
+                 patch("yt_library.youtube_identity.time.monotonic", return_value=1) as clock:
+                self.assertEqual(identity()["channel_id"], CHANNEL)
+                clock.return_value = 902
+                request.side_effect = OSError("proxy connection refused")
+                for _ in range(3):
+                    with self.assertRaisesRegex(RuntimeError, "cookie and proxy"):
+                        identity()
+                self.assertEqual(request.call_count, 2)
+                self.assertEqual(identity._value, {})
+                request.side_effect = None
+                request.return_value = page(SECOND)
+                clock.return_value = 963
+                self.assertEqual(identity()["channel_id"], SECOND)
+                self.assertEqual(request.call_count, 3)
+                self.assertTrue(all(call.args == ("configured-proxy",) for call in proxy.call_args_list))
+
+    def test_cookie_content_path_proxy_and_mid_request_changes_invalidate_identity(self):
+        with tempfile.TemporaryDirectory() as temp:
+            cookie = Path(temp) / "cookies.txt"
+            cookie.write_text("first", encoding="utf-8")
+            identity = YoutubeAccountIdentity(cookie, "configured-proxy")
+            with patch("yt_library.youtube_identity.load_cookie_jar", return_value=http.cookiejar.CookieJar()), \
+                 patch("yt_library.youtube_identity.socks5_proxy_handlers", return_value=[]), \
+                 patch("yt_library.youtube_identity.request_bytes", return_value=page()) as request:
+                identity()
+                stat = cookie.stat()
+                cookie.write_text("other", encoding="utf-8")
+                os.utime(cookie, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+                request.return_value = page(SECOND)
+                self.assertEqual(identity()["channel_id"], SECOND)
+                self.assertEqual(request.call_count, 2)
+                other = Path(temp) / "other.txt"
+                other.write_bytes(cookie.read_bytes())
+                identity.cookie_file = other
+                identity()
+                identity.proxy_url = "replacement-proxy"
+                identity()
+                self.assertEqual(request.call_count, 4)
+                other.unlink()
+                with self.assertRaises(RuntimeError):
+                    identity()
+                self.assertEqual(identity._value, {})
+                other.write_text("replacement", encoding="utf-8")
+
+                def replace_during_request(*args, **kwargs):
+                    other.write_text("changed while fetching", encoding="utf-8")
+                    return page()
+
+                request.side_effect = replace_during_request
+                with self.assertRaises(RuntimeError):
+                    identity()
+                self.assertEqual(identity._value, {})
+                request.side_effect = None
+                self.assertEqual(identity()["channel_id"], SECOND)

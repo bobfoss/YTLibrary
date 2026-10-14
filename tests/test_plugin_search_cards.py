@@ -4,10 +4,11 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+import urllib.parse
 from unittest.mock import Mock
 
 from yt_library import core, server
-from yt_library.plugins import PluginManager
+from yt_library.plugins import PartialVideoSearchError, PluginManager
 from yt_library.queries import omni_search_data
 
 
@@ -161,6 +162,96 @@ class PluginSearchBoundaryTests(unittest.TestCase):
         for raw in ('[]', '{"first":1}', 'null', 'bad json'):
             with self.assertRaises(ValueError):
                 server.plugin_search_filter_kwargs({"plugin_filters_example": [raw]}, "example")
+
+    def test_partial_matching_retains_validated_presence_and_never_claims_matches(self):
+        self.plugin.filter_videos.return_value = {
+            "video_ids": ["abcdefghijk"], "search_match_ids": [], "search_error": "Verification unavailable",
+        }
+        with self.assertRaises(PartialVideoSearchError) as raised:
+            self.manager.filter_videos("example", "needle")
+        self.assertEqual(raised.exception.video_ids, {"abcdefghijk"})
+        for constraint, field in (("video_filter_plugin", "video_id_filters"),
+                                  ("video_exclude_filter_plugin", "video_id_exclusion_filters")):
+            data = server.video_plugin_query_data(self.manager, {
+                constraint: ["example"], "video_search_plugin": ["example"],
+            }, "needle", isolate_errors=True)
+            self.assertEqual(data[field], [frozenset({"abcdefghijk"})])
+            self.assertEqual(data["video_facet_memberships"], {"example": frozenset({"abcdefghijk"})})
+            self.assertEqual(data["video_search_match_ids"], set())
+            self.assertEqual(len(data["errors"]), 1)
+        self.plugin.filter_videos.return_value["search_match_ids"] = ["abcdefghijk"]
+        with self.assertRaises(ValueError):
+            self.manager.filter_videos("example", "needle")
+
+    def test_unavailable_membership_is_optional_unless_explicitly_restricted(self):
+        self.plugin.filter_videos.side_effect = RuntimeError("offline")
+        params = {"video_search_plugin": ["example"]}
+        data = server.video_plugin_query_data(self.manager, params, "needle", isolate_errors=True)
+        self.assertEqual(data["video_search_match_ids"], set())
+        self.assertEqual(data["video_facet_memberships"], {})
+        self.assertEqual(len(data["errors"]), 1)
+        for constraint in ("video_filter_plugin", "video_exclude_filter_plugin"):
+            with self.assertRaisesRegex(RuntimeError, "No results are shown"):
+                server.video_plugin_query_data(self.manager, {**params, constraint: ["example"]},
+                                               "needle", isolate_errors=True)
+
+    def test_omni_route_returns_partial_native_results_and_recovers_without_changing_query(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "library.sqlite3"
+            core.migrate_database(path)
+            conn = core.connect(path)
+            with conn:
+                core.upsert_video(conn, "abcdefghijk", title="Needle native match", source="metadata")
+            conn.close()
+            handler = object.__new__(server.LibraryHandler)
+            handler.db_path, handler.config_data = path, {}
+            handler.plugin_manager = self.manager
+            handler.send_json = Mock()
+            self.plugin.filter_videos.return_value = {
+                "video_ids": ["abcdefghijk"], "search_match_ids": [], "search_error": "Verification unavailable",
+            }
+            self.plugin.project_videos.return_value = []
+            self.plugin.search_result_descriptors.return_value = [self.descriptor]
+            self.plugin.hydrate_search_results.return_value = {"one": {"text": "Selected author"}}
+            route = urllib.parse.urlparse('/api/search?q=needle&kinds=video&video_search_plugin=example&result_plugin=example')
+            handler._handle_library_get(route)
+            data = handler.send_json.call_args.args[0]
+            self.assertEqual(handler.send_json.call_args.kwargs, {})
+            self.assertEqual(data["total"], 1)
+            self.assertEqual(data["results"][0]["kind"], "video")
+            self.assertTrue(data["resultsIncomplete"])
+            self.assertFalse(data["totalIsExact"])
+            self.assertFalse(data["countsAreExact"])
+            self.assertEqual(len(data["pluginErrors"]), 1)
+            self.plugin.search_result_descriptors.assert_not_called()
+            self.plugin.hydrate_search_results.assert_not_called()
+            self.plugin.filter_videos.return_value.pop("search_error")
+            handler._handle_library_get(route)
+            recovered = handler.send_json.call_args.args[0]
+            self.assertEqual(recovered["total"], 2)
+            self.assertNotIn("pluginErrors", recovered)
+            self.assertNotIn("resultsIncomplete", recovered)
+            self.assertEqual({row["kind"] for row in recovered["results"]}, {"video", "plugin"})
+
+    def test_restrictive_filter_failure_returns_explanation_instead_of_native_matches(self):
+        handler = object.__new__(server.LibraryHandler)
+        handler.config_data = {}
+        handler.plugin_manager = self.manager
+        handler.send_json = Mock()
+        self.plugin.filter_videos.side_effect = RuntimeError("offline")
+        for constraint in ('video_filter_plugin', 'video_exclude_filter_plugin'):
+            handler._handle_library_get(urllib.parse.urlparse(
+                f'/api/search?q=needle&{constraint}=example&video_search_plugin=example',
+            ))
+            self.assertEqual(handler.send_json.call_args.kwargs, {"status": 503})
+            self.assertIn("No results are shown", handler.send_json.call_args.args[0]["message"])
+
+    def test_native_only_route_does_not_invoke_an_unavailable_provider(self):
+        self.plugin.filter_videos.side_effect = RuntimeError("offline")
+        data = server.video_plugin_query_data(self.manager, {"video_search_plugin": ["__none__"]},
+                                              "needle", isolate_errors=True)
+        self.assertEqual(data["errors"], [])
+        self.plugin.filter_videos.assert_not_called()
 
 
 if __name__ == "__main__":

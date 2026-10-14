@@ -563,7 +563,9 @@ only `channel_id` and UTC `checked_at` for the active YouTube cookie account.
 The host fetches the authenticated account settings page through its configured
 proxy and pacer, and accepts only its channel-settings avatar identity. Lookup
 is lazy, serialized, and cached for 15 minutes (failed lookups for one minute);
-cookie file replacement invalidates the cache. A missing, signed-out, or
+cookie content, configured path, or proxy changes invalidate the cache. The
+cookie fingerprint is rechecked after verification, so an account change during
+a request cannot populate the cache. Missing cookies clear prior identity. A missing, signed-out, or
 unrecognized account raises an error instead of retaining stale identity.
 This service does not use OAuth or expose authentication material to plugins.
 
@@ -594,6 +596,21 @@ render beside shared result controls, and persist in preferences and URLs.
 `collection.fetch` also receives a `filters` snapshot in its request object;
 the plugin maps these to its collection API. Native collection filters remain
 hidden, and provider options do not introduce another sort or Meta section.
+
+`partial_video_search_v1` lets `filter_videos` return a nonempty `search_error`
+alongside authoritative `video_ids` and empty `search_match_ids`. This means
+presence is known but matching is unavailable; provider policy and explanations
+remain plugin-owned. Global search retains valid presence constraints, skips
+that provider's result descriptors, and continues native and other providers.
+A wholly failed optional video provider is omitted. If its explicit include or
+exclude constraint cannot be established, search instead returns 503 with an
+explanation; it never ignores that constraint. Scoped video routes remain
+fail-closed. Descriptor and hydration failures are also reported through
+`pluginErrors`, `resultsIncomplete`, `countsAreExact: false`, and
+`totalIsExact: false`. Counts describe only the available subset, not a complete
+answer. The browser qualifies totals/pagination, marks filter counts unknown,
+does not cache partial responses/counts, and preserves query/controls for
+Refresh or an explicit filter change. Failed searches clear stale result cards.
 
 Optional browser `search.prepareResults(items, host)` hydrates cached profile or
 video presentation data for the selected page. `search.sortOptions` may contribute

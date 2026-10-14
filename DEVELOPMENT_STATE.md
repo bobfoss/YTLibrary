@@ -214,8 +214,13 @@ facts, transient PIDs, or other runtime-only data here.
   saved preferences. YTLC uses it for own/others messages, defaulting to both.
   `youtube_account_identity_v1` exposes the active cookie account's channel ID
   through a lazy, host-owned account-page lookup (15-minute memory cache,
-  invalidated by cookie replacement). It neither adds OAuth nor exposes cookies;
-  unresolved identity fails selective filters explicitly. No schema change.
+  invalidated by cookie content/path or proxy changes, including changes during
+  verification). It neither adds OAuth nor exposes cookies or stale identity.
+  `partial_video_search_v1` lets plugins report unavailable matching separately
+  from known local presence. Global search omits affected contributions with
+  explicit incomplete results/counts; unresolvable include/exclude constraints
+  still fail closed. YTLC owns Own/Others policy. Partial responses are not
+  cached in the browser, and Refresh preserves query/filter choices. No schema change.
 - Plugin search can enrich canonical videos and clips, project bounded virtual
   videos, decorate native entity cards, add scoped channel-video tabs, and
   plan work through the host contract. It must not couple core queries or
