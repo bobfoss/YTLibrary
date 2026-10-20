@@ -313,8 +313,10 @@ The left-navigation library lists are named omni-search presets. Search returns 
 - Watch-progress history needs an evidence survey before expanding the model. `history_events` already stores progress observed on individual live-history occurrences, while metadata scans maintain the latest canonical percentage on `videos`; there is no durable chronology that associates successive metadata observations with distinct rewatches. Survey progress coverage by watch date and observation date to estimate when YouTube stops exposing completion data. If repeated watches produce lower percentages alongside corresponding new history occurrences, evaluate retaining those observations per occurrence instead of replacing the prior canonical completion.
 - Playlist Newest sorting now uses the same observed `playlists.last_changed_at`
   value displayed as **Last updated**, independent of polling cadence. Exact
-  per-item chronology remains unfinished: capture a reliable membership-added
-  or first-seen timestamp on `playlist_items` if future features need to say
+  per-item chronology remains incomplete: scans now preserve existing exact
+  `playlist_items.added_at` dates for unambiguous matches, but do not discover
+  missing added dates. Capture a reliable membership-added or separately modeled
+  first-seen timestamp if future features need to say
   when an individual video joined a playlist. YouTube's separate displayed
   update date is now captured in `playlists.youtube_updated_date` and is
   temporarily shown as **YT Last updated**. Survey its coverage and conflicts

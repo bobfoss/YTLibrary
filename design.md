@@ -1454,6 +1454,16 @@ The database models the best-known current state of YouTube. Imports and scans r
 
 Parsers may use titles, channels, descriptions, and URLs transiently to update canonical entities, then discard those source copies. Metadata revisions and complete historical playlist snapshots are intentionally not retained.
 
+Membership scans preserve existing `playlist_items.added_at` evidence for video
+IDs occurring exactly once in both the previous and new membership, even after
+reordering. Unchanged membership layouts also preserve duplicate occurrences'
+individual dates in their existing slots. Changed duplicate layouts or counts,
+new members, and unidentified hidden slots do not inherit guessed dates. Retained
+unavailable entries keep their existing dates. A scan does not synthesize an
+added date from observation time, upload time, or the playlist's update date.
+This preservation requires neither API collection nor a schema migration and
+does not recover dates already lost by older scans.
+
 Playlist observation time and playlist change time are distinct.
 `playlist_scans.scanned_at` records when the current playlist surface was last
 observed. A first successful scan establishes the comparison baseline, and a

@@ -43,6 +43,10 @@ facts, transient PIDs, or other runtime-only data here.
 - Exact instants are UTC with `Z`. Date-only history observations remain
   date-only and retain ordinal order; the UI must not fabricate a midnight
   timestamp.
+- Membership scans preserve existing item `added_at` dates for unique video
+  matches and unchanged duplicate layouts. Unknown or ambiguous member dates
+  remain null; scan time is not an added date. This needs no API collection,
+  migration, or backfill and does not recover previously erased dates.
 - YouTube direct pages and authenticated account surfaces are authoritative for
   current YouTube state. Takeout is strong historical evidence. Archivarix is
   independent recovery evidence and must not redefine canonical YouTube

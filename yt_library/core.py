@@ -7831,6 +7831,42 @@ def _refresh_playlist_known_change_at(
         _record_playlist_change(conn, playlist_id, str(row["known_change_at"]))
 
 
+def _playlist_scan_added_dates(
+    previous_items: list[dict[str, Any]],
+    videos: list[dict[str, Any]],
+) -> dict[int, str]:
+    """Carry known dates forward without guessing changed duplicate identities."""
+    previous_by_video: dict[str, list[dict[str, Any]]] = {}
+    for item in previous_items:
+        video_id = str(item.get("video_id") or "").strip()
+        if video_id:
+            previous_by_video.setdefault(video_id, []).append(item)
+    current_counts = Counter(str(video.get("video_id") or "").strip() for video in videos)
+    previous_layout = [
+        (item["position"], str(item.get("video_id") or "").strip())
+        for item in previous_items
+        if item["membership_state"] != "retained_unavailable"
+    ]
+    current_layout = [
+        (video["position"], str(video.get("video_id") or "").strip())
+        for video in videos
+    ]
+    unchanged_layout = previous_layout == current_layout
+    previous_by_position = {item["position"]: item for item in previous_items}
+    added_dates: dict[int, str] = {}
+    for position, video_id in current_layout:
+        matches = previous_by_video.get(video_id, [])
+        if len(matches) == current_counts[video_id] == 1:
+            matched = matches[0]
+        elif unchanged_layout and len(matches) == current_counts[video_id]:
+            matched = previous_by_position.get(position)
+        else:
+            matched = None
+        if matched and matched.get("added_at"):
+            added_dates[position] = matched["added_at"]
+    return added_dates
+
+
 def save_playlist_scan(
     conn: sqlite3.Connection,
     playlist_id: str,
@@ -7894,17 +7930,21 @@ def save_playlist_scan(
         updated_at=now,
         restore_tombstone=True,
     )
-    retained = [
+    previous_items = [
         dict(row)
         for row in conn.execute(
             """
             SELECT * FROM playlist_items
             WHERE playlist_id = ?
-              AND (membership_state = 'retained_unavailable' OR source_quality = 'takeout')
             ORDER BY position
             """,
             (playlist_id,),
         )
+    ]
+    added_dates = _playlist_scan_added_dates(previous_items, videos)
+    retained = [
+        item for item in previous_items
+        if item["membership_state"] == "retained_unavailable" or item["source_quality"] == "takeout"
     ]
     conn.execute("DELETE FROM playlist_items WHERE playlist_id = ?", (playlist_id,))
     for video in videos:
@@ -7936,7 +7976,7 @@ def save_playlist_scan(
               playlist_id, position, video_id, membership_state, unavailable_kind,
               source_quality, match_type, match_confidence, added_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, 'youtube', ?, ?, NULL, ?)
+            VALUES (?, ?, ?, ?, ?, 'youtube', ?, ?, ?, ?)
             """,
             (
                 playlist_id,
@@ -7946,6 +7986,7 @@ def save_playlist_scan(
                 (video.get("availability") or "unavailable") if not video_id else "",
                 "" if video_id else "ambiguous_hidden_slot",
                 "video_id" if video_id else "hidden_slot_only",
+                added_dates.get(video["position"]),
                 now,
             ),
         )
