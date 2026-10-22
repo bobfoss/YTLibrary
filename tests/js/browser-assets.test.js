@@ -317,6 +317,47 @@ test('playlist cards render observed and temporary YouTube update dates', () => 
   assert.doesNotMatch(namedFunctionSource(indexSource, 'channelDetailCardFor'), /lastUpdatedHtml/);
 });
 
+test('playlist member added dates retain their precision and configured timezone', () => {
+  const indexSource = source('index.js');
+  const context = {
+    Date,
+    Intl,
+    escapeHtml: videoCardHelpers().escapeHtml,
+    window: { YTLibraryTime: timezoneHelpers('America/Los_Angeles') },
+  };
+  vm.runInNewContext(
+    namedFunctionSource(indexSource, 'cardTimestampLabel') + '\n'
+      + namedFunctionSource(indexSource, 'playlistAddedDateHtml'),
+    context,
+  );
+  const html = context.playlistAddedDateHtml({
+    playlist_id: 'PLdated', added_at: '2026-10-19T23:48:39Z',
+  });
+  assert.match(html, /class="details playlist-added-date-line"/);
+  assert.match(html, /Date added Oct 19, 2026 4:48 PM/);
+  assert.equal(context.playlistAddedDateHtml({ playlist_id: 'PLdated' }), '');
+  assert.equal(context.playlistAddedDateHtml({ added_at: '2026-10-19T23:48:39Z' }), '');
+  assert.equal(context.playlistAddedDateHtml({
+    playlist_id: 'PLdated', metadata_upload_date: '2026-10-19', updated_at: '2026-10-20',
+  }), '');
+  const dateOnly = context.playlistAddedDateHtml({ playlist_id: 'PLdated', added_at: '2026-10-19' });
+  assert.match(dateOnly, /Date added Oct 19, 2026/);
+  assert.doesNotMatch(dateOnly, /AM|PM|12:00/);
+  assert.match(context.playlistAddedDateHtml({ playlist_id: 'PLdated', added_at: '<img>' }), /&lt;img&gt;/);
+});
+
+test('only scoped playlist cards opt into the added date line in grid and detail layouts', () => {
+  const indexSource = source('index.js');
+  assert.match(indexSource, /playlistVideoCardFor\(result\.item, \{ showPosition: true, showAddedDate: true \}\)/);
+  assert.match(namedFunctionSource(indexSource, 'playlistVideoCardFor'),
+    /addedDateHtml: options\.showAddedDate \? playlistAddedDateHtml\(video\) : ''/);
+  assert.doesNotMatch(namedFunctionSource(indexSource, 'videoDetailCardFor'), /playlistAddedDateHtml/);
+  assert.doesNotMatch(namedFunctionSource(indexSource, 'searchVideoCardFor'), /showAddedDate: true/);
+  assert.doesNotMatch(namedFunctionSource(indexSource, 'historyRowCardFor'), /showAddedDate: true/);
+  assert.match(source('video-card.js'), /\$\{options\.latestWatchDateHtml \|\| ''\}\s*\$\{options\.addedDateHtml \|\| ''\}/);
+  assert.match(source('index.html'), /\.search-grid\.layout-compact \.playlist-added-date-line,/);
+});
+
 test('timezone reset persists the detected zone in one request', () => {
   const timezoneSource = source('timezone.js');
 

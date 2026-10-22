@@ -315,7 +315,14 @@ The left-navigation library lists are named omni-search presets. Search returns 
   value displayed as **Last updated**, independent of polling cadence. Exact
   per-item chronology remains incomplete: scans now preserve existing exact
   `playlist_items.added_at` dates for unambiguous matches, but do not discover
-  missing added dates. Capture a reliable membership-added or separately modeled
+  missing added dates. Known dates are displayed on playlist grid and detailed
+  member cards. A reference-only web/API comparison found Music's undocumented
+  `playlistItemData.voteSortValue` matches exact item-added timestamps in the
+  tested non-voting playlists. Before automatic integration, validate voting
+  and duplicate occurrences, join by playlist-occurrence ID to avoid Music's
+  substituted video IDs, and preserve normal membership when Music omits rows.
+  No automatic Music or Data API collection was enabled by this investigation.
+  Capture a reliable membership-added or separately modeled
   first-seen timestamp if future features need to say
   when an individual video joined a playlist. YouTube's separate displayed
   update date is now captured in `playlists.youtube_updated_date` and is

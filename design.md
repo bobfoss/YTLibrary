@@ -1463,6 +1463,12 @@ unavailable entries keep their existing dates. A scan does not synthesize an
 added date from observation time, upload time, or the playlist's update date.
 This preservation requires neither API collection nor a schema migration and
 does not recover dates already lost by older scans.
+Known membership dates are displayed as **Date added** on the active playlist's
+grid and detailed member cards. Unknown dates have no line; date-only evidence
+stays date-only, and exact UTC values use the configured display timezone.
+Global search, History, channel lists, and standalone video details must not
+present an arbitrary selected membership's date as a video-level fact. The UI
+does not change collection, membership, or sorting behavior.
 
 Playlist observation time and playlist change time are distinct.
 `playlist_scans.scanned_at` records when the current playlist surface was last

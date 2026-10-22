@@ -3029,6 +3029,31 @@ class NormalizedReadModelTests(unittest.TestCase):
         self.assertEqual(no_matching_duplicates["total"], 0)
         self.assertEqual(no_matching_duplicates["duplicateCount"], 2)
 
+    def test_playlist_collection_preserves_each_membership_added_date(self) -> None:
+        self.add_video("shared-date", "Shared video")
+        self.add_video("unknown-date", "Undated video")
+        for playlist_id, title in (("PLdate-a", "A first hydration choice"), ("PLdate-b", "B active playlist")):
+            self.conn.execute("INSERT INTO playlists(playlist_id, title) VALUES (?, ?)", (playlist_id, title))
+        self.conn.executemany(
+            "INSERT INTO playlist_items(playlist_id, position, video_id, added_at) VALUES (?, ?, ?, ?)",
+            [
+                ("PLdate-a", 1, "shared-date", "2020-01-01T00:00:00Z"),
+                ("PLdate-b", 1, "shared-date", "2026-10-19T23:48:39Z"),
+                ("PLdate-b", 2, "shared-date", "2026-10-20T01:02:03Z"),
+                ("PLdate-b", 3, "unknown-date", None),
+            ],
+        )
+        self.conn.commit()
+        page = video_collection_data(self.conn, playlist_id="PLdate-b", sort="playlist_order")
+        self.assertEqual(
+            [(row["playlist_id"], row["position"], row["added_at"]) for row in page["results"]],
+            [
+                ("PLdate-b", 1, "2026-10-19T23:48:39Z"),
+                ("PLdate-b", 2, "2026-10-20T01:02:03Z"),
+                ("PLdate-b", 3, ""),
+            ],
+        )
+
     def test_playlist_collection_filters_partial_completion_by_minimum_percentage(self) -> None:
         for video_id, title in (
             ("partial-low", "Partial low"),

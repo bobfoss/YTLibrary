@@ -47,6 +47,10 @@ facts, transient PIDs, or other runtime-only data here.
   matches and unchanged duplicate layouts. Unknown or ambiguous member dates
   remain null; scan time is not an added date. This needs no API collection,
   migration, or backfill and does not recover previously erased dates.
+- Playlist member cards show a known membership **Date added** in grid and
+  detailed layouts, using the configured timezone and preserving date-only
+  precision. Other video views do not borrow an arbitrary playlist's date.
+  This display does not enable automatic API or Music-web date collection.
 - YouTube direct pages and authenticated account surfaces are authoritative for
   current YouTube state. Takeout is strong historical evidence. Archivarix is
   independent recovery evidence and must not redefine canonical YouTube

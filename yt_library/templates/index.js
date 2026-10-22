@@ -2671,6 +2671,14 @@ function latestWatchDateHtml(video) {
     : '';
 }
 
+function playlistAddedDateHtml(video) {
+  if (!video?.playlist_id) return '';
+  const addedAt = cardTimestampLabel(video.added_at);
+  return addedAt
+    ? `<div class="details playlist-added-date-line"><span>Date added ${escapeHtml(addedAt)}</span></div>`
+    : '';
+}
+
 function playlistLastUpdatedHtml(playlist) {
   const updatedAt = cardTimestampLabel(playlist?.last_changed_at);
   return updatedAt
@@ -7017,7 +7025,7 @@ async function renderCurrentView() {
     renderPager(pageInfo);
     applyCardLayout('playlist');
     const cards = searchResults.map(result => SearchResultPresentations.apply(
-      playlistVideoCardFor(result.item, { showPosition: true }),
+      playlistVideoCardFor(result.item, { showPosition: true, showAddedDate: true }),
       resultPresentations.get(result),
     ));
     const decoration = decorateEntityCardBatch(
@@ -7241,6 +7249,7 @@ function playlistVideoCardFor(video, options = {}) {
     playlistSourcesHtml: options.playlistSourcesHtml === undefined ? playlistSourceLinksHtml(video) : options.playlistSourcesHtml,
     watchDateHtml: options.watchDateHtml || '',
     latestWatchDateHtml: options.latestWatchDateHtml || '',
+    addedDateHtml: options.showAddedDate ? playlistAddedDateHtml(video) : '',
     availabilityHtml: videoAvailabilityHtml(video),
     typeDecoratorHtml: videoTypeDecoratorHtml(video),
     aiDisclosureDecoratorHtml: aiDisclosureDecoratorHtml(video),
