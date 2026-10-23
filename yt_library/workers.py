@@ -101,7 +101,6 @@ from .core import (
     save_playlist_scan,
     save_playlist_scan_error,
     save_video_recovery,
-    save_youtube_data_api_snapshot,
     save_youtube_history_events,
     scan_playlist_videos,
     scan_playlist_ytdlp,
@@ -130,14 +129,8 @@ from .core import (
 from .my_activity import MyActivityError, fetch_my_activity_pages
 from .network import ProxyUnavailableError, probe_socks5_proxy, proxy_unavailable_error
 from .plugins import PluginManager, PluginTaskWorker
-from .request_pacing import pace_outbound_request
 from .worker_runs import WorkerRunRecorder
-from .youtube_data_api import (
-    YouTubeDataApiError,
-    YouTubeDataApiNotConfigured,
-    build_youtube_data_service,
-    fetch_youtube_account_snapshot,
-)
+from .playlist_dates import collect_playlist_dates
 
 
 _YOUTUBE_AUTH_PROBE_LOCK = threading.Lock()
@@ -1060,6 +1053,7 @@ class PlaylistScanWorker(_ThreadWorkerLifecycle):
         queue_id: int = 0,
         proxy_url: str = "",
         timezone_name: str = DEFAULT_DISPLAY_TIMEZONE,
+        date_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return self._start_background(
             self._run,
@@ -1074,6 +1068,7 @@ class PlaylistScanWorker(_ThreadWorkerLifecycle):
                 queue_id,
                 proxy_url,
                 timezone_name,
+                date_config,
             ),
             started_message="Playlist scan started",
             already_running_message="Playlist scan already running",
@@ -1097,6 +1092,7 @@ class PlaylistScanWorker(_ThreadWorkerLifecycle):
         queue_id: int = 0,
         proxy_url: str = "",
         timezone_name: str = DEFAULT_DISPLAY_TIMEZONE,
+        date_config: dict[str, Any] | None = None,
     ) -> None:
         conn = connect(db_path)
         runs = WorkerRunRecorder(conn, "playlist")
@@ -1711,6 +1707,9 @@ class PlaylistScanWorker(_ThreadWorkerLifecycle):
                             error,
                             playlist_metadata=playlist_metadata,
                         )
+                        scan_result = conn.execute("SELECT scan_status, scan_error FROM playlist_scans WHERE playlist_id=?", (playlist_id,)).fetchone()
+                        if scan_result and scan_result["scan_status"] == "error":
+                            status, error = "error", scan_result["scan_error"]
                         removed_from_library = not bool(
                             conn.execute(
                                 "SELECT 1 FROM playlists WHERE playlist_id = ?",
@@ -1727,7 +1726,7 @@ class PlaylistScanWorker(_ThreadWorkerLifecycle):
                                 f"across {duplicate_video_count} "
                                 f"video{'s' if duplicate_video_count != 1 else ''}"
                             )
-                        if not removed_from_library and video_count:
+                        if not removed_from_library and video_count and status == "ok":
                             manual_scan = bool(row["manual"])
                             metadata_result = enqueue_playlist_metadata_targets(
                                 conn,
@@ -1740,7 +1739,7 @@ class PlaylistScanWorker(_ThreadWorkerLifecycle):
                                     "queued_count" if manual_scan else "inserted_count"
                                 ]
                             )
-                        if not removed_from_library and playlist_id != LIKED_VIDEOS_PLAYLIST_ID:
+                        if not removed_from_library and status == "ok" and playlist_id != LIKED_VIDEOS_PLAYLIST_ID:
                             placeholder_result = enqueue_placeholder_recovery_targets(
                                 conn,
                                 playlist_id,
@@ -1845,6 +1844,8 @@ class PlaylistScanWorker(_ThreadWorkerLifecycle):
                             f"{remaining} playlist jobs remain queued"
                         ),
                     )
+                if date_config is not None and status == "ok" and not removed_from_library and not self._stop.is_set():
+                    collect_playlist_dates(conn, dict(date_config, youtube_cookies=str(row_cookie_file)), playlist_id, should_stop=self._stop.is_set)
                 if delay and worker_queue_type_count(conn, "playlist") > 0:
                     time.sleep(delay)
             with conn:
@@ -2763,61 +2764,8 @@ def run_optional_account_sync(
             "proxy_error": detected_proxy_error,
         }
 
-    token_path = config_path(config, "youtube_oauth_token")
-    if not token_path.is_file():
-        conn = connect(db_path)
-        try:
-            with conn:
-                log_worker_queue_event(
-                    conn,
-                    "info",
-                    "YouTube Data API OAuth is not configured; subscription and playlist published dates may be incomplete.",
-                )
-        finally:
-            conn.close()
-    else:
-        try:
-            service = build_youtube_data_service(
-                config_path(config, "youtube_oauth_client_secrets"),
-                token_path,
-                proxy_url,
-            )
-            snapshot = fetch_youtube_account_snapshot(
-                service,
-                before_request=pace_outbound_request,
-            )
-            conn = connect(db_path)
-            try:
-                with conn:
-                    stats = save_youtube_data_api_snapshot(conn, snapshot)
-                    log_worker_queue_event(
-                        conn,
-                        "info",
-                        (
-                            "YouTube Data API sync: "
-                            f"{stats['subscriptions']} subscriptions, "
-                            f"{stats['playlists']} playlists, and "
-                            f"{stats['playlist_items']} playlist items; "
-                            f"{stats['playlist_items_unmatched']} timestamps could not be matched."
-                        ),
-                    )
-            finally:
-                conn.close()
-        except (YouTubeDataApiNotConfigured, YouTubeDataApiError, OSError, RuntimeError) as exc:
-            source_failed = True
-            detected_proxy_error = (
-                detected_proxy_error or proxy_unavailable_error(exc, proxy_url)
-            )
-            conn = connect(db_path)
-            try:
-                with conn:
-                    log_worker_queue_event(
-                        conn,
-                        "warn",
-                        f"YouTube Data API sync was skipped: {exc}",
-                    )
-            finally:
-                conn.close()
+    # Runtime API enrichment is playlist-scoped, after a successful member scan.
+    # The broad account snapshot remains an explicit CLI operation only.
 
     # Account synchronization is reproducible polling work. Consume ordinary
     # source failures after logging them, but preserve every job when the
@@ -3538,6 +3486,7 @@ class WorkerQueueDispatcher(_ThreadWorkerLifecycle):
                         queue_id=queue_id,
                         proxy_url=proxy_url,
                         timezone_name=timezone_name,
+                        date_config=config,
                     )
                     launched = bool(result.get("started"))
                     if launched:

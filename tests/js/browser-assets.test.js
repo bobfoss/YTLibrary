@@ -343,6 +343,12 @@ test('playlist member added dates retain their precision and configured timezone
   const dateOnly = context.playlistAddedDateHtml({ playlist_id: 'PLdated', added_at: '2026-10-19' });
   assert.match(dateOnly, /Date added Oct 19, 2026/);
   assert.doesNotMatch(dateOnly, /AM|PM|12:00/);
+  const firstSeen = context.playlistAddedDateHtml({ playlist_id: 'PLdated', first_seen_at: '2026-10-19T23:48:39Z' });
+  assert.match(firstSeen, /First seen Oct 19, 2026 4:48 PM/);
+  assert.doesNotMatch(firstSeen, /Date added/);
+  const both = context.playlistAddedDateHtml({ playlist_id: 'PLdated', added_at: '2025-01-01', first_seen_at: '2026-10-19T23:48:39Z' });
+  assert.match(both, /Date added Jan 1, 2025/);
+  assert.doesNotMatch(both, /First seen/);
   assert.match(context.playlistAddedDateHtml({ playlist_id: 'PLdated', added_at: '<img>' }), /&lt;img&gt;/);
 });
 

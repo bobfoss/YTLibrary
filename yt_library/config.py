@@ -28,6 +28,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "archivarix_cookies": "archivarix_cookies.txt",
     "youtube_oauth_client_secrets": "youtube_oauth_client_secret.json",
     "youtube_oauth_token": "youtube_oauth_token.json",
+    "youtube_data_api_enabled": False,
     "thumbnail_dir": "thumbs",
     "archivarix_thumbnail_dir": "archivarix_thumbs",
     "video_thumbnail_dir": "video_thumbs",
@@ -533,6 +534,11 @@ def configured_archivarix_retry_backoff(config: dict[str, Any]) -> float:
     )
 
 
+def configured_youtube_data_api_enabled(config: dict[str, Any]) -> bool:
+    value = config.get("youtube_data_api_enabled", False)
+    return value if isinstance(value, bool) else str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def configured_archivarix_auto_retry(config: dict[str, Any]) -> bool:
     value = config.get("archivarix_auto_retry", DEFAULT_CONFIG["archivarix_auto_retry"])
     if isinstance(value, bool):
@@ -554,6 +560,7 @@ def configured_broadcast_polling(config: dict[str, Any]) -> dict[str, int]:
 
 
 CONFIG_NORMALIZERS: dict[str, Callable[[dict[str, Any]], Any]] = {
+    "youtube_data_api_enabled": configured_youtube_data_api_enabled,
     "broadcast_polling": configured_broadcast_polling,
     "display_timezone": configured_display_timezone,
     "week_start": configured_week_start,

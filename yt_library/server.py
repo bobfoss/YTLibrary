@@ -33,6 +33,7 @@ from .config import (
     WEEK_STARTS,
     configured_archivarix_max_in_flight,
     configured_archivarix_auto_retry,
+    configured_youtube_data_api_enabled,
     configured_admin_advanced,
     configured_channel_history_card_layout,
     configured_channel_playlisted_video_card_layout,
@@ -2289,6 +2290,8 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
                 config["hide_empty_filters"] = hide_empty_filters
                 config["use_proxy"] = use_proxy
                 config["proxy"] = proxy_url
+                if "youtube_data_api_enabled" in params:
+                    config["youtube_data_api_enabled"] = (params["youtube_data_api_enabled"][0].lower() in {"1", "true", "yes", "on"})
                 return previous_timezone, proxy_changed
 
             previous_timezone, proxy_changed = self._update_config(
@@ -3023,6 +3026,7 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
             "updateTime": configured_update_time(self.config_data),
             "updateSchedule": UPDATE_SCHEDULER.status(self.config_data),
             "archivarixAutoRetry": configured_archivarix_auto_retry(self.config_data),
+            "youtubeDataApiEnabled": configured_youtube_data_api_enabled(self.config_data),
             "adminAdvanced": configured_admin_advanced(self.config_data),
         }
 

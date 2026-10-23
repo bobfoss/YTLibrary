@@ -250,7 +250,7 @@ class YouTubeDataApiTests(unittest.TestCase):
 
         self.assertEqual(remaining, 0)
         self.assertTrue(any("My Activity cookies are not configured" in value for value in messages))
-        self.assertTrue(any("OAuth is not configured" in value for value in messages))
+        self.assertFalse(any("YouTube Data API sync" in value for value in messages))
 
     def test_optional_account_sync_consumes_queue_item_when_configured_source_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

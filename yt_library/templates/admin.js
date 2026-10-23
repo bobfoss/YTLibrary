@@ -73,6 +73,7 @@ const fields = {
   weekStartSunday: document.getElementById('weekStartSunday'),
   weekStartMonday: document.getElementById('weekStartMonday'),
   hideEmptyFilters: document.getElementById('hideEmptyFilters'),
+  youtubeDataApiEnabled: document.getElementById('youtubeDataApiEnabled'),
   useProxy: document.getElementById('useProxy'),
   proxyUrl: document.getElementById('proxyUrl'),
   saveSettings: document.getElementById('saveSettings'),
@@ -1005,6 +1006,7 @@ function render(data) {
     fields.weekStartSunday.checked = !fields.weekStartMonday.checked;
     fields.useProxy.checked = Boolean(settings.useProxy);
     fields.proxyUrl.value = settings.proxy || '';
+    fields.youtubeDataApiEnabled.checked = Boolean(settings.youtubeDataApiEnabled);
   }
   if (!hideEmptyFiltersSaving && !hideEmptyFiltersDirty) {
     savedHideEmptyFilters = settings.hideEmptyFilters !== false;
@@ -1353,6 +1355,7 @@ async function saveAdminSettings() {
       week_start: fields.weekStartMonday.checked ? 'monday' : 'sunday',
       use_proxy: fields.useProxy.checked ? '1' : '0',
       proxy: fields.proxyUrl.value.trim(),
+      youtube_data_api_enabled: fields.youtubeDataApiEnabled.checked ? '1' : '0',
     });
     const settings = payload.settings || {};
     fields.displayTimezone.value = settings.displayTimezone || fields.displayTimezone.value.trim();
@@ -1897,6 +1900,7 @@ fields.archivarixAutoRetry.addEventListener('change', () => {
   saveArchivarixAutoRetry();
 });
 fields.useProxy.addEventListener('change', () => { settingsDirty = true; });
+fields.youtubeDataApiEnabled.addEventListener('change', () => { settingsDirty = true; });
 fields.proxyUrl.addEventListener('input', () => { settingsDirty = true; });
 fields.saveSettings.addEventListener('click', saveAdminSettings);
 fields.restartService.addEventListener('click', restartServiceNow);

@@ -2673,9 +2673,10 @@ function latestWatchDateHtml(video) {
 
 function playlistAddedDateHtml(video) {
   if (!video?.playlist_id) return '';
-  const addedAt = cardTimestampLabel(video.added_at);
+  const addedAt = cardTimestampLabel(video.added_at || video.first_seen_at);
+  const label = video.added_at ? 'Date added' : 'First seen';
   return addedAt
-    ? `<div class="details playlist-added-date-line"><span>Date added ${escapeHtml(addedAt)}</span></div>`
+    ? `<div class="details playlist-added-date-line"><span>${label} ${escapeHtml(addedAt)}</span></div>`
     : '';
 }
 

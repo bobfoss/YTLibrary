@@ -116,7 +116,7 @@ def authorize_youtube_data_api(client_secrets_path: Path, token_path: Path) -> P
     return token_path
 
 
-def _load_credentials(client_secrets_path: Path, token_path: Path) -> Any:
+def _load_credentials(client_secrets_path: Path, token_path: Path, proxy_url: str = "") -> Any:
     Request, Credentials, _InstalledAppFlow, _build = _google_dependencies()
     if not token_path.is_file():
         raise YouTubeDataApiNotConfigured(
@@ -133,7 +133,14 @@ def _load_credentials(client_secrets_path: Path, token_path: Path) -> Any:
         ) from exc
     if credentials.expired and credentials.refresh_token:
         try:
-            credentials.refresh(Request())
+            if proxy_url:
+                import requests
+                with requests.Session() as session:
+                    session.trust_env = False
+                    session.proxies.update({"http": proxy_url, "https": proxy_url})
+                    credentials.refresh(Request(session=session))
+            else:
+                credentials.refresh(Request())
         except Exception as exc:
             raise YouTubeDataApiAuthenticationError(
                 f"Could not refresh the YouTube OAuth token: {exc}"
@@ -159,7 +166,7 @@ def build_youtube_data_service(
     """Build an authenticated YouTube v3 service from local OAuth material."""
 
     _Request, _Credentials, _InstalledAppFlow, build = _google_dependencies()
-    credentials = _load_credentials(client_secrets_path, token_path)
+    credentials = _load_credentials(client_secrets_path, token_path, proxy_url)
     try:
         if proxy_url:
             import httplib2
@@ -181,7 +188,7 @@ def build_youtube_data_service(
             )
             authorized_http = AuthorizedHttp(
                 credentials,
-                http=httplib2.Http(proxy_info=proxy_info),
+                http=httplib2.Http(proxy_info=proxy_info, timeout=30),
             )
             return build(
                 "youtube",
@@ -189,7 +196,9 @@ def build_youtube_data_service(
                 http=authorized_http,
                 cache_discovery=False,
             )
-        return build("youtube", "v3", credentials=credentials, cache_discovery=False)
+        import httplib2
+        from google_auth_httplib2 import AuthorizedHttp
+        return build("youtube", "v3", http=AuthorizedHttp(credentials, http=httplib2.Http(timeout=30)), cache_discovery=False)
     except Exception as exc:
         raise YouTubeDataApiError(f"Could not initialize the YouTube Data API: {exc}") from exc
 
@@ -201,9 +210,9 @@ def _response_pages(
     page_token = ""
     seen_tokens: set[str] = set()
     while True:
+        if before_request:
+            before_request()
         try:
-            if before_request:
-                before_request()
             response = request_factory(page_token).execute()
         except Exception as exc:
             raise YouTubeDataApiError(f"YouTube Data API request failed: {exc}") from exc

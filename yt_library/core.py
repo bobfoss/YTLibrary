@@ -70,6 +70,7 @@ from .request_pacing import (
 )
 from .time_utils import utc_days_ago, utc_now
 from .worker_runs import WorkerRunRecorder
+from .playlist_membership import AmbiguousMembershipError, reconcile_memberships
 
 if TYPE_CHECKING:
     from .workers import (
@@ -2853,6 +2854,7 @@ def parse_video_renderer(
     playability = playlist_video_playability(renderer, title, reason)
     return {
         "playlist_id": playlist_id,
+        "set_video_id": str(renderer.get("setVideoId") or ""),
         "position": position,
         "video_id": video_id,
         "title": title,
@@ -7024,14 +7026,6 @@ def save_youtube_data_api_snapshot(
                 (playlist_id, position, video_id),
             ).fetchone()
             if exact:
-                conn.execute(
-                    """
-                    UPDATE playlist_items
-                    SET added_at=COALESCE(NULLIF(?, ''), added_at), updated_at=?
-                    WHERE playlist_id=? AND position=? AND video_id=?
-                    """,
-                    (added_at, now, playlist_id, position, video_id),
-                )
                 playlist_items_updated += 1
                 continue
             same_video = conn.execute(
@@ -7043,14 +7037,6 @@ def save_youtube_data_api_snapshot(
                 (playlist_id, video_id),
             ).fetchall()
             if len(same_video) == 1:
-                conn.execute(
-                    """
-                    UPDATE playlist_items
-                    SET added_at=COALESCE(NULLIF(?, ''), added_at), updated_at=?
-                    WHERE playlist_id=? AND position=?
-                    """,
-                    (added_at, now, playlist_id, same_video[0]["position"]),
-                )
                 playlist_items_updated += 1
                 continue
             occupied = conn.execute(
@@ -7064,13 +7050,18 @@ def save_youtube_data_api_snapshot(
                 """
                 INSERT INTO playlist_items(
                   playlist_id, position, video_id, membership_state,
-                  source_quality, added_at, updated_at
+                  source_quality, added_at, added_at_source, updated_at
                 )
-                VALUES (?, ?, ?, 'current', 'youtube_api', ?, ?)
+                VALUES (?, ?, ?, 'current', 'youtube_api', ?, 'youtube_api', ?)
                 """,
                 (playlist_id, position, video_id, added_at or None, now),
             )
             playlist_items_inserted += 1
+        from .playlist_dates import apply_added_dates
+        apply_added_dates(conn, playlist_id, [
+            {"video_id": item.video_id, "added_at": item.published_at, "added_at_source": "youtube_api"}
+            for item in playlist.items
+        ])
         if (
             previous_signature is not None
             and previous_signature != _playlist_change_signature(conn, playlist_id)
@@ -7831,40 +7822,6 @@ def _refresh_playlist_known_change_at(
         _record_playlist_change(conn, playlist_id, str(row["known_change_at"]))
 
 
-def _playlist_scan_added_dates(
-    previous_items: list[dict[str, Any]],
-    videos: list[dict[str, Any]],
-) -> dict[int, str]:
-    """Carry known dates forward without guessing changed duplicate identities."""
-    previous_by_video: dict[str, list[dict[str, Any]]] = {}
-    for item in previous_items:
-        video_id = str(item.get("video_id") or "").strip()
-        if video_id:
-            previous_by_video.setdefault(video_id, []).append(item)
-    current_counts = Counter(str(video.get("video_id") or "").strip() for video in videos)
-    previous_layout = [
-        (item["position"], str(item.get("video_id") or "").strip())
-        for item in previous_items
-        if item["membership_state"] != "retained_unavailable"
-    ]
-    current_layout = [
-        (video["position"], str(video.get("video_id") or "").strip())
-        for video in videos
-    ]
-    unchanged_layout = previous_layout == current_layout
-    previous_by_position = {item["position"]: item for item in previous_items}
-    added_dates: dict[int, str] = {}
-    for position, video_id in current_layout:
-        matches = previous_by_video.get(video_id, [])
-        if len(matches) == current_counts[video_id] == 1:
-            matched = matches[0]
-        elif unchanged_layout and len(matches) == current_counts[video_id]:
-            matched = previous_by_position.get(position)
-        else:
-            matched = None
-        if matched and matched.get("added_at"):
-            added_dates[position] = matched["added_at"]
-    return added_dates
 
 
 def save_playlist_scan(
@@ -7877,7 +7834,7 @@ def save_playlist_scan(
 ) -> tuple[int, int]:
     previous_signature = _playlist_change_signature(conn, playlist_id)
     previous_scan = conn.execute(
-        "SELECT scan_status FROM playlist_scans WHERE playlist_id = ?",
+        "SELECT scan_status, membership_complete FROM playlist_scans WHERE playlist_id = ?",
         (playlist_id,),
     ).fetchone()
     had_change_baseline = bool(
@@ -7930,23 +7887,6 @@ def save_playlist_scan(
         updated_at=now,
         restore_tombstone=True,
     )
-    previous_items = [
-        dict(row)
-        for row in conn.execute(
-            """
-            SELECT * FROM playlist_items
-            WHERE playlist_id = ?
-            ORDER BY position
-            """,
-            (playlist_id,),
-        )
-    ]
-    added_dates = _playlist_scan_added_dates(previous_items, videos)
-    retained = [
-        item for item in previous_items
-        if item["membership_state"] == "retained_unavailable" or item["source_quality"] == "takeout"
-    ]
-    conn.execute("DELETE FROM playlist_items WHERE playlist_id = ?", (playlist_id,))
     for video in videos:
         channel_id = upsert_channel(
             conn,
@@ -7970,51 +7910,17 @@ def save_playlist_scan(
                 checked_at=now,
                 updated_at=now,
             )
-        conn.execute(
-            """
-            INSERT INTO playlist_items(
-              playlist_id, position, video_id, membership_state, unavailable_kind,
-              source_quality, match_type, match_confidence, added_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, 'youtube', ?, ?, ?, ?)
-            """,
-            (
-                playlist_id,
-                video["position"],
-                video_id or None,
-                "current" if video_id else "unresolved_unavailable",
-                (video.get("availability") or "unavailable") if not video_id else "",
-                "" if video_id else "ambiguous_hidden_slot",
-                "video_id" if video_id else "hidden_slot_only",
-                added_dates.get(video["position"]),
-                now,
-            ),
+    reported_count = (playlist_metadata or {}).get("video_count")
+    complete = status == "ok" and (reported_count is None or int(reported_count) == len(videos))
+    try:
+        reconcile_memberships(
+            conn, playlist_id, videos, now,
+            observe_new=bool(previous_scan and previous_scan["membership_complete"]),
+            remove_missing=complete,
         )
-    current_ids = {str(video.get("video_id") or "") for video in videos if video.get("video_id")}
-    retained_position = (len(videos) + 1) * 1000
-    for item in retained:
-        if item.get("video_id") in current_ids:
-            continue
-        conn.execute(
-            """
-            INSERT INTO playlist_items(
-              playlist_id, position, video_id, membership_state, unavailable_kind,
-              source_quality, match_type, match_confidence, added_at, updated_at
-            ) VALUES (?, ?, ?, 'retained_unavailable', ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                playlist_id,
-                retained_position,
-                item.get("video_id"),
-                item.get("unavailable_kind") or "unavailable",
-                item.get("source_quality") or "takeout",
-                item.get("match_type") or "ambiguous_hidden_candidate",
-                item.get("match_confidence") or "takeout_missing",
-                item.get("added_at"),
-                now,
-            ),
-        )
-        retained_position += 1
+    except AmbiguousMembershipError as exc:
+        log_playlist_scan_event(conn, "", "warn", str(exc), playlist_id)
+        return save_playlist_scan_error(conn, playlist_id, str(exc))
     conn.execute(
         """
         INSERT INTO playlist_scans(
@@ -8030,6 +7936,9 @@ def save_playlist_scan(
         """,
         (playlist_id, now, len(videos), unavailable_count, status, error),
     )
+    conn.execute("UPDATE playlist_scans SET membership_complete=? WHERE playlist_id=?", (int(complete), playlist_id))
+    if conn.execute("SELECT 1 FROM playlist_items WHERE playlist_id=? AND first_seen_at=? LIMIT 1", (playlist_id, now)).fetchone():
+        conn.execute("UPDATE playlist_scans SET date_checked_at=NULL WHERE playlist_id=?", (playlist_id,))
     if playlist_metadata:
         metadata = {
             key: str(playlist_metadata.get(key) or "").strip()
@@ -11094,7 +11003,7 @@ def import_takeout_playlists(args: argparse.Namespace) -> None:
                 continue
             if playlist_is_tombstoned(conn, playlist_id):
                 continue
-            conn.execute("DELETE FROM playlist_items WHERE playlist_id = ?", (playlist_id,))
+            imported_memberships = []
             with video_file.open("r", encoding="utf-8-sig", newline="") as handle:
                 for position, row in enumerate(csv.DictReader(handle), start=1):
                     video_id = row.get("Video ID", "").strip()
@@ -11107,23 +11016,10 @@ def import_takeout_playlists(args: argparse.Namespace) -> None:
                             added_at = normalize_utc_timestamp(added_at)
                         except ValueError:
                             pass
-                    conn.execute(
-                        """
-                        INSERT INTO playlist_items(
-                          playlist_id, position, video_id, membership_state,
-                          source_quality, added_at, updated_at
-                        )
-                        VALUES (?, ?, ?, 'current', 'takeout', ?, ?)
-                        """,
-                        (
-                            playlist_id,
-                            position,
-                            video_id,
-                            added_at or None,
-                            now,
-                        ),
-                    )
+                    imported_memberships.append({"video_id": video_id, "position": position,
+                        "source_quality": "takeout", "added_at": added_at or None, "added_at_source": "takeout"})
                     imported_video_rows += 1
+            reconcile_memberships(conn, playlist_id, imported_memberships, now)
             _refresh_playlist_known_change_at(conn, playlist_id)
         reconcile_stats = rebuild_playlist_reconciliation(conn)
 
@@ -11305,32 +11201,28 @@ def import_takeout_playlists_zip(conn: sqlite3.Connection, zip_path: Path) -> di
                 "SELECT 1 FROM playlist_scans WHERE playlist_id = ?",
                 (playlist_id,),
             ).fetchone()
-            if not scanned:
-                conn.execute("DELETE FROM playlist_items WHERE playlist_id = ?", (playlist_id,))
+            imported_memberships = []
             text = zf.read(member_name).decode("utf-8-sig", "replace")
             for position, row in enumerate(csv.DictReader(io.StringIO(text)), start=1):
                 video_id = (row.get("Video ID") or "").strip()
                 if not video_id:
                     continue
                 upsert_video(conn, video_id, source="takeout", updated_at=now)
-                if scanned:
-                    continue
                 added_at = (row.get("Playlist Video Creation Timestamp") or "").strip()
                 if added_at:
                     try:
                         added_at = normalize_utc_timestamp(added_at)
                     except ValueError:
                         pass
-                conn.execute(
-                    """
-                    INSERT INTO playlist_items(
-                      playlist_id, position, video_id, membership_state,
-                      source_quality, added_at, updated_at
-                    ) VALUES (?, ?, ?, 'current', 'takeout', ?, ?)
-                    """,
-                    (playlist_id, position, video_id, added_at or None, now),
-                )
-                item_count += 1
+                imported_memberships.append({"video_id": video_id, "position": position,
+                    "source_quality": "takeout", "added_at": added_at or None, "added_at_source": "takeout"})
+                if not scanned:
+                    item_count += 1
+            if scanned:
+                from .playlist_dates import apply_added_dates
+                apply_added_dates(conn, playlist_id, imported_memberships)
+            else:
+                reconcile_memberships(conn, playlist_id, imported_memberships, now)
             _refresh_playlist_known_change_at(conn, playlist_id)
     return {
         "source_found": 1,

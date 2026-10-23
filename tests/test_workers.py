@@ -4639,7 +4639,7 @@ class WorkerQueueTests(unittest.TestCase):
                     "SOCKS5 proxy 127.0.0.1:1081 is unavailable"
                 ),
             ) as fetch_activity, patch(
-                "yt_library.workers.build_youtube_data_service"
+                "yt_library.playlist_dates.build_youtube_data_service"
             ) as build_data_service:
                 dispatcher._run(
                     db_path,

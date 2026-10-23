@@ -18,6 +18,7 @@ archivarix.net cookies.txt
 youtube_oauth_*.json
 
 # Personal exports and snapshots
+backups/
 *.zip
 youtube_playlist_manager_*.json
 YouTube and YouTube Music/

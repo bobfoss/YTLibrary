@@ -80,14 +80,7 @@ class PlaylistAddedDateTests(unittest.TestCase):
                 self.conn.execute("SELECT last_changed_at FROM playlists WHERE playlist_id = 'PLdates'").fetchone()[0],
                 "2026-10-01T04:05:06Z",
             )
-            self.assertEqual(
-                {
-                    tuple(row) for row in self.conn.execute(
-                        "SELECT source_quality, updated_at FROM playlist_items"
-                    )
-                },
-                {("youtube", observed_at)},
-            )
+            self.assertTrue(all(row[0] == "youtube" for row in self.conn.execute("SELECT source_quality FROM playlist_items")))
 
     def test_unique_dates_follow_video_ids_through_reorder_and_insertions(self) -> None:
         self.scan(["one", "two"])
@@ -125,15 +118,17 @@ class PlaylistAddedDateTests(unittest.TestCase):
                 self.set_date(3, "2025-02-01T02:00:00Z")
                 self.scan(after)
                 self.assertEqual(self.dates(), [
-                    (video_id, "2025-03-01T03:00:00Z" if video_id == "other" else None)
-                    for video_id in after
+                    ("repeated", "2025-01-01T01:00:00Z"),
+                    ("other", "2025-03-01T03:00:00Z"),
+                    ("repeated", "2025-02-01T02:00:00Z"),
                 ])
+                self.assertEqual(self.conn.execute("SELECT scan_status FROM playlist_scans").fetchone()[0], "error")
 
     def test_new_duplicate_cannot_inherit_a_single_existing_date(self) -> None:
         self.scan(["repeated"])
         self.set_date(1, "2025-01-01T01:00:00Z")
         self.scan(["repeated", "repeated"])
-        self.assertEqual(self.dates(), [("repeated", None), ("repeated", None)])
+        self.assertEqual(self.dates(), [("repeated", "2025-01-01T01:00:00Z")])
 
     def test_hidden_slots_never_match_dates_by_position(self) -> None:
         self.scan(["known", None])
@@ -171,7 +166,43 @@ class PlaylistAddedDateTests(unittest.TestCase):
                 """
             )
         self.scan(["one"])
-        self.assertEqual(self.dates(), [("one", None)])
+        self.assertEqual(self.dates(), [("one", "2025-01-01T01:00:00Z"), ("one", "2025-02-01T02:00:00Z")])
+
+    def test_membership_rows_survive_noop_and_reorder(self) -> None:
+        self.scan(["one", "two"])
+        def snapshot():
+            return {row["video_id"]: (row["rowid"], row["updated_at"]) for row in self.conn.execute("SELECT rowid, * FROM playlist_items")}
+        before = snapshot()
+        self.scan(["one", "two"], observed_at="2026-10-20T20:00:00Z")
+        self.assertEqual(snapshot(), before)
+        self.scan(["two", "one"], observed_at="2026-10-21T20:00:00Z")
+        self.assertEqual({key: value[0] for key, value in snapshot().items()}, {key: value[0] for key, value in before.items()})
+
+    def test_first_seen_only_for_new_members_after_baseline(self) -> None:
+        self.scan(["existing"])
+        self.scan(["existing"], observed_at="2026-10-20T20:00:00Z")
+        self.assertIsNone(self.conn.execute("SELECT first_seen_at FROM playlist_items").fetchone()[0])
+        self.scan(["new", "existing"], observed_at="2026-10-21T20:00:00Z")
+        self.assertEqual(dict(self.conn.execute("SELECT video_id, first_seen_at FROM playlist_items")), {"existing": None, "new": "2026-10-21T20:00:00Z"})
+        self.scan(["existing", "new"], observed_at="2026-10-22T20:00:00Z")
+        self.assertEqual(self.conn.execute("SELECT first_seen_at FROM playlist_items WHERE video_id='new'").fetchone()[0], "2026-10-21T20:00:00Z")
+
+    def test_occurrence_ids_preserve_duplicate_dates_on_reorder(self) -> None:
+        self.scan(["one", "one"])
+        self.set_date(1, "2025-01-01T01:00:00Z")
+        self.set_date(2, "2025-02-01T01:00:00Z")
+        with self.conn:
+            self.conn.execute("UPDATE playlist_items SET set_video_id=CASE position WHEN 1 THEN 'a' ELSE 'b' END")
+            core.save_playlist_scan(self.conn, "PLdates", [{"video_id": "one", "set_video_id": "b"}, {"video_id": "one", "set_video_id": "a"}], "ok", "")
+        self.assertEqual(self.dates(), [("one", "2025-02-01T01:00:00Z"), ("one", "2025-01-01T01:00:00Z")])
+
+    def test_incomplete_observation_does_not_delete_missing_members(self) -> None:
+        self.scan(["one", "two"])
+        self.set_date(2, "2025-01-01")
+        with self.conn:
+            core.save_playlist_scan(self.conn, "PLdates", [{"video_id": "one"}], "ok", "", {"video_count": 2})
+        self.assertEqual(self.dates(), [("one", None), ("two", "2025-01-01")])
+        self.assertEqual(self.conn.execute("SELECT membership_state FROM playlist_items WHERE video_id='two'").fetchone()[0], "current")
 
     def test_dates_are_scoped_to_the_playlist(self) -> None:
         self.scan(["one"])

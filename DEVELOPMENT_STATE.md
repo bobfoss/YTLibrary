@@ -43,14 +43,23 @@ facts, transient PIDs, or other runtime-only data here.
 - Exact instants are UTC with `Z`. Date-only history observations remain
   date-only and retain ordinal order; the UI must not fabricate a midnight
   timestamp.
-- Membership scans preserve existing item `added_at` dates for unique video
-  matches and unchanged duplicate layouts. Unknown or ambiguous member dates
-  remain null; scan time is not an added date. This needs no API collection,
-  migration, or backfill and does not recover previously erased dates.
-- Playlist member cards show a known membership **Date added** in grid and
-  detailed layouts, using the configured timezone and preserving date-only
-  precision. Other video views do not borrow an arbitrary playlist's date.
-  This display does not enable automatic API or Music-web date collection.
+- Membership scans reconcile surviving rows in place, including reorders.
+  Stable YouTube occurrence IDs resolve duplicates; ambiguous duplicate changes
+  preserve the prior list and report an error. Incomplete scans do not delete
+  unexposed members. Takeout imports use the same persistence rules.
+- `first_seen_at` is assigned only to new memberships after a complete baseline,
+  never to existing undated members, first-scan baselines, or header-only checks.
+  `added_at_source` records `youtube_api`, `music_web`, `takeout`, or `unknown`.
+  Existing dates survive missing or conflicting enrichment evidence.
+- Playlist cards display **Date added**, else **First seen**, else no line.
+  Playlist-member chronological sorting uses the same chosen value, unknowns
+  last; other video views never borrow an arbitrary membership date.
+- Successful member scans fill missing dates using opt-in API access, then
+  occurrence-matched Music web evidence. Requests are paced outside transactions;
+  unsuccessful enrichment has a one-day cooldown, reset by new memberships.
+  `youtube_data_api_enabled` defaults off and is exposed in Advanced Admin.
+  Update no longer runs the broad API account snapshot merely because a token
+  exists; that operation remains available through the explicit CLI command.
 - YouTube direct pages and authenticated account surfaces are authoritative for
   current YouTube state. Takeout is strong historical evidence. Archivarix is
   independent recovery evidence and must not redefine canonical YouTube
@@ -87,7 +96,8 @@ facts, transient PIDs, or other runtime-only data here.
   bookkeeping record the check.
 - Supported databases upgrade through ordered migrations. The fresh schema and
   every supported upgrade path must describe the same current model. The
-  schema version is 36, adding nullable `videos.auto_dubbed` observations.
+  schema version is 37, adding membership date provenance, first-observed and
+  YouTube occurrence identity, plus scan completeness/date-attempt bookkeeping.
 
 ## Browser And Search Model
 

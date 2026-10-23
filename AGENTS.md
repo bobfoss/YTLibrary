@@ -168,14 +168,13 @@ defaults:
 - OAuth desktop client: `.codex/reference/youtube_oauth_client_secret.json`
 - Saved access/refresh token: `.codex/reference/youtube_oauth_token.json`
 
-Both files are Git-ignored. Their presence, the saved `youtube.readonly` scope,
-and refresh-token presence were verified on 2026-10-03 without exposing secret
-values; this was not a live validation of the grant. The configured default
-OAuth files are absent, so normal Update does not currently use this reference
-grant. Keep that separation: the user retained API access for reference work,
-not as a required runtime dependency or a replacement for adaptive direct-page
-live-stream checks. Do not move these files into the runtime defaults or enable
-API collection merely because credentials exist.
+Both files are Git-ignored. Do not expose their contents. Runtime playlist-date
+enrichment is gated by `youtube_data_api_enabled`, default false, using the
+configured OAuth paths. The maintainer explicitly authorized enabling this for
+the local instance on 2026-10-23. Other installations remain opt-in; credential
+presence alone never enables it. Do not move credentials or enable broad account
+imports or API live-status polling as a side effect. Update's API use is now
+playlist-date-only; the broad account snapshot remains an explicit CLI command.
 
 For explicitly requested read-only API probes, pass the reference paths to
 `build_youtube_data_service(client_secrets_path, token_path, proxy_url)` in

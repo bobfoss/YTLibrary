@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Reconcile playlist memberships in place, preserving dates through scans and
+  reorders; protect ambiguous duplicate and incomplete observations.
+- Add membership First seen and added-date provenance (schema 37), without
+  backfilling observation times onto existing members.
+- Enrich missing added dates through optional API access, Music web evidence,
+  and Takeout. The Advanced API option defaults off; broad account collection
+  remains an explicit CLI action.
+- Display Date added or First seen on playlist member cards and use that same
+  date for chronological member sorting.
+
 ## 1.0.0 — 2026-10-03
 
 First versioned YT Library release, establishing the current application as the

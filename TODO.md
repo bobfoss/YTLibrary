@@ -313,18 +313,17 @@ The left-navigation library lists are named omni-search presets. Search returns 
 - Watch-progress history needs an evidence survey before expanding the model. `history_events` already stores progress observed on individual live-history occurrences, while metadata scans maintain the latest canonical percentage on `videos`; there is no durable chronology that associates successive metadata observations with distinct rewatches. Survey progress coverage by watch date and observation date to estimate when YouTube stops exposing completion data. If repeated watches produce lower percentages alongside corresponding new history occurrences, evaluate retaining those observations per occurrence instead of replacing the prior canonical completion.
 - Playlist Newest sorting now uses the same observed `playlists.last_changed_at`
   value displayed as **Last updated**, independent of polling cadence. Exact
-  per-item chronology remains incomplete: scans now preserve existing exact
-  `playlist_items.added_at` dates for unambiguous matches, but do not discover
-  missing added dates. Known dates are displayed on playlist grid and detailed
-  member cards. A reference-only web/API comparison found Music's undocumented
+  per-item chronology remains incomplete: membership reconciliation now preserves
+  rows and dates, tracks First seen only for new members after a complete baseline,
+  and enriches missing added dates from opt-in API, Music web, and Takeout evidence.
+  Date added is preferred over First seen for member-card display and date sorting.
+  A reference web/API comparison found Music's undocumented
   `playlistItemData.voteSortValue` matches exact item-added timestamps in the
-  tested non-voting playlists. Before automatic integration, validate voting
-  and duplicate occurrences, join by playlist-occurrence ID to avoid Music's
-  substituted video IDs, and preserve normal membership when Music omits rows.
-  No automatic Music or Data API collection was enabled by this investigation.
-  Capture a reliable membership-added or separately modeled
-  first-seen timestamp if future features need to say
-  when an individual video joined a playlist. YouTube's separate displayed
+  tested non-voting playlists. Expand voting-enabled fixtures before supporting
+  that signal there; explicit voting-enabled responses are currently rejected.
+  Continue investigating duplicate occurrences without stable IDs; ambiguous
+  membership changes preserve the prior snapshot rather than discarding dates.
+  Music omissions do not change normal membership. YouTube's separate displayed
   update date is now captured in `playlists.youtube_updated_date` and is
   temporarily shown as **YT Last updated**. Survey its coverage and conflicts
   across the library before deciding whether it should replace the observed

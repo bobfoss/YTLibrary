@@ -579,6 +579,7 @@ def _video_candidate_query(
                  v.updated_at, '' AS playlist_id, '' AS playlist_title, 0 AS position,
                  '' AS membership_state, '' AS unavailable_kind, '' AS source_quality,
                  '' AS match_type, '' AS match_confidence, '' AS added_at,
+                 '' AS first_seen_at, 'unknown' AS added_at_source,
                  v.is_playable, v.availability, v.reaction, v.uploader_category,
                  v.note,
                  v.video_type, {effective_broadcast_status_sql()} AS broadcast_status, v.ai_disclosure,
@@ -608,6 +609,7 @@ def _video_candidate_query(
                  pi.playlist_id, p.title AS playlist_title, pi.position,
                  pi.membership_state, pi.unavailable_kind, pi.source_quality,
                  pi.match_type, pi.match_confidence, COALESCE(pi.added_at, '') AS added_at,
+                 COALESCE(pi.first_seen_at, '') AS first_seen_at, pi.added_at_source,
                  v.is_playable, COALESCE(v.reaction, '') AS reaction,
                  COALESCE(v.uploader_category, '') AS uploader_category,
                  COALESCE(v.note, '') AS note,
@@ -1337,9 +1339,10 @@ def video_collection_data(
     if total and offset >= total:
         offset = ((total - 1) // limit) * limit
     title_sql = "COALESCE(NULLIF(metadata_title, ''), title, '') COLLATE NOCASE"
+    date_sql = "COALESCE(NULLIF(added_at, ''), NULLIF(first_seen_at, ''), '')" if playlist_id else "COALESCE(NULLIF(added_at, ''), metadata_upload_date, '')"
     order_by = {
         "oldest_added": (
-            f"COALESCE(NULLIF(added_at, ''), metadata_upload_date, ''), {title_sql}, count_key"
+            f"({date_sql} = ''), {date_sql}, {title_sql}, count_key"
         ),
         "most_watched": f"watch_count DESC, {title_sql}, count_key",
         "playlist_order": (
@@ -1349,7 +1352,7 @@ def video_collection_data(
         "title_desc": f"{title_sql} DESC, count_key",
     }.get(
         sort,
-        f"COALESCE(NULLIF(added_at, ''), metadata_upload_date, '') DESC, {title_sql} DESC, count_key",
+        f"{date_sql} DESC, {title_sql} DESC, count_key",
     )
     filter_params.update({"limit": limit, "offset": offset})
     page_candidates = [
@@ -1379,6 +1382,8 @@ def video_collection_data(
                 "match_type",
                 "match_confidence",
                 "added_at",
+                "first_seen_at",
+                "added_at_source",
                 "availability",
             )
         }

@@ -17,7 +17,7 @@ CHANNEL_SUBSCRIPTION_CAPTURE_START = "2026-07-30T20:34:50Z"
 CHANNEL_NOTIFICATION_CAPTURE_START = "2026-07-30T20:55:56Z"
 
 SCHEMA = load_schema()
-SCHEMA_VERSION = 36
+SCHEMA_VERSION = 37
 
 
 _DATABASE_BOOTSTRAP_LOCK = threading.Lock()
@@ -1353,6 +1353,28 @@ def _migrate_database(conn: sqlite3.Connection) -> None:
             "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
             (36, utc_now()),
         )
+
+
+    if current_version < 37:
+        for table, additions in {
+            "playlist_items": {
+                "added_at_source": "TEXT NOT NULL DEFAULT 'unknown'",
+                "first_seen_at": "TEXT",
+                "set_video_id": "TEXT NOT NULL DEFAULT ''",
+            },
+            "playlist_scans": {
+                "date_checked_at": "TEXT",
+                "membership_complete": "INTEGER NOT NULL DEFAULT 0",
+            },
+        }.items():
+            columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+            for name, declaration in additions.items():
+                if name not in columns:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {declaration}")
+        conn.execute("""UPDATE playlist_scans SET membership_complete=1
+                        WHERE scan_status='ok' AND video_count=(
+                          SELECT p.video_count FROM playlists p WHERE p.playlist_id=playlist_scans.playlist_id)""")
+        conn.execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)", (37, utc_now()))
 
 
 def _schema_version(conn: sqlite3.Connection) -> int:

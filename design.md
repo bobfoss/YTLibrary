@@ -1454,21 +1454,42 @@ The database models the best-known current state of YouTube. Imports and scans r
 
 Parsers may use titles, channels, descriptions, and URLs transiently to update canonical entities, then discard those source copies. Metadata revisions and complete historical playlist snapshots are intentionally not retained.
 
-Membership scans preserve existing `playlist_items.added_at` evidence for video
-IDs occurring exactly once in both the previous and new membership, even after
-reordering. Unchanged membership layouts also preserve duplicate occurrences'
-individual dates in their existing slots. Changed duplicate layouts or counts,
-new members, and unidentified hidden slots do not inherit guessed dates. Retained
-unavailable entries keep their existing dates. A scan does not synthesize an
-added date from observation time, upload time, or the playlist's update date.
-This preservation requires neither API collection nor a schema migration and
-does not recover dates already lost by older scans.
-Known membership dates are displayed as **Date added** on the active playlist's
-grid and detailed member cards. Unknown dates have no line; date-only evidence
-stays date-only, and exact UTC values use the configured display timezone.
+Membership reconciliation preserves surviving SQLite rows. It matches stable
+YouTube `set_video_id` occurrences first, then unambiguous video IDs or unchanged
+duplicate positions. Position changes temporarily park moving rows within a
+savepoint to avoid key collisions. An ambiguous duplicate change preserves the
+prior membership and reports a scan error. Complete scans remove departed ordinary
+members; incomplete scans retain unexposed rows without marking them unavailable.
+Existing Takeout/unavailable retention remains separate from confirmed departures.
+Takeout imports share reconciliation; a Takeout import into an already scanned
+playlist enriches dates without replacing current membership.
+
+`playlist_items.first_seen_at` records only newly observed memberships after a
+complete baseline. Existing undated members and initial baseline members remain
+null. Reorders preserve it; a confirmed removal/re-add starts a new membership.
+`added_at` is source-provided evidence, never synthesized from scans, uploads, or
+playlist update dates. `added_at_source` is `youtube_api`, `music_web`, `takeout`,
+or `unknown`. Migration preserves existing dates without guessing provenance.
+
+Successful member scans enrich missing dates outside the write transaction.
+The default-off Advanced setting `youtube_data_api_enabled` allows bounded,
+paced playlistItems requests using configured OAuth files. Unresolved members
+fall back to authenticated Music web `voteSortValue` evidence joined through
+normal YouTube occurrence IDs, never Music's potentially substituted video ID.
+Invalid/future dates, explicit voting-enabled responses, ambiguous identities,
+and disagreements with existing dates are not adopted. Missing web rows never
+alter membership. `date_checked_at` limits retries to daily, reset on new
+memberships. Header-only scans do not collect dates. Broad account API snapshots
+remain explicit CLI work, not automatic token-presence-triggered Update work.
+
+Playlist grid and detailed member cards display **Date added**, otherwise
+**First seen**, otherwise no date line. Compact cards hide the line. Date-only
+evidence stays date-only, and exact UTC values use the configured display timezone.
+Playlist-member Recently added/Oldest added sorting uses that same preference,
+with undated members last. Playlist-level Last updated sorting is unchanged.
 Global search, History, channel lists, and standalone video details must not
 present an arbitrary selected membership's date as a video-level fact. The UI
-does not change collection, membership, or sorting behavior.
+does not present membership observation as a video-level timestamp.
 
 Playlist observation time and playlist change time are distinct.
 `playlist_scans.scanned_at` records when the current playlist surface was last

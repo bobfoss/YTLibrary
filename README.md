@@ -168,6 +168,7 @@ in the generated config file:
   "archivarix_cookies": "archivarix_cookies.txt",
   "youtube_oauth_client_secrets": "youtube_oauth_client_secret.json",
   "youtube_oauth_token": "youtube_oauth_token.json",
+  "youtube_data_api_enabled": false,
   "thumbnail_dir": "thumbs",
   "archivarix_thumbnail_dir": "archivarix_thumbs",
   "video_thumbnail_dir": "video_thumbs",
@@ -362,10 +363,21 @@ python yt_library_manager.py collect-youtube-data-api
 ```
 
 The first command opens Google's OAuth consent flow and saves the refreshable
-token locally. Both account sources are optional during normal Update scans:
-missing credentials produce an informational worker log; expired or rejected
-credentials produce a warning and do not halt the rest of the queue. Channel
-date sorting uses the My Activity subscription date as the gold standard, then
+token locally. The second explicitly imports the broad account snapshot; normal
+Update does not do so merely because credentials exist. To collect missing
+playlist-member added dates automatically, enable **Use YouTube Data API for
+playlist dates** in Advanced Admin and Save. This defaults off. Successful member
+scans try the configured API grant when enabled, then authenticated Music web
+evidence for unresolved dates. Missing/rejected credentials fall back safely;
+no consent window opens during background work. Takeout's Playlist Video Creation
+Timestamp also supplies added-date evidence. Existing reliable dates are preserved.
+
+Playlist cards show **Date added**, or **First seen** when only that is known.
+First seen is recorded for new members after an established complete scan, not
+backfilled onto every existing member. Neither date is fabricated for baseline
+members. Member date sorts use the same displayed value, with unknowns last.
+
+Channel date sorting uses the My Activity subscription date as the gold standard, then
 the Data API subscription date, then a first watch observed directly in history.
 Metadata and playlist backfills do not assign channel first-seen dates.
 

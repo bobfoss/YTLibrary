@@ -283,7 +283,9 @@ CREATE TABLE IF NOT EXISTS playlist_scans (
   video_count INTEGER NOT NULL DEFAULT 0,
   unavailable_count INTEGER NOT NULL DEFAULT 0,
   scan_status TEXT NOT NULL DEFAULT '',
-  scan_error TEXT NOT NULL DEFAULT ''
+  scan_error TEXT NOT NULL DEFAULT '',
+  date_checked_at TEXT,
+  membership_complete INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS playlist_items (
@@ -297,6 +299,9 @@ CREATE TABLE IF NOT EXISTS playlist_items (
   match_type TEXT NOT NULL DEFAULT '',
   match_confidence TEXT NOT NULL DEFAULT '',
   added_at TEXT,
+  added_at_source TEXT NOT NULL DEFAULT 'unknown',
+  first_seen_at TEXT,
+  set_video_id TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
   PRIMARY KEY (playlist_id, position),
   CHECK (video_id IS NOT NULL OR membership_state = 'unresolved_unavailable')
