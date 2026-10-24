@@ -850,10 +850,12 @@ test('OAuth status follows the checkbox without altering cookie statuses or enab
   const end = adminSource.indexOf('async function loadCookieStatuses(', start);
   vm.runInNewContext(adminSource.slice(start, end), context);
   const render = () => context.renderUpdateCookieStatuses({ youtube: { status: 'valid' } });
-  const oauth = () => context.fields.updateCookieStatus.children.find(item => item.id === 'youtubeOAuthStatus');
+  const tail = () => context.fields.updateCookieStatus.children.find(item => item.className === 'cookie-oauth-tail');
+  const oauth = () => tail()?.children.find(item => item.id === 'youtubeOAuthStatus');
+  const cookieTexts = () => context.fields.updateCookieStatus.children.flatMap(item => item === tail() ? item.children.slice(0, 1) : [item]).map(item => item.textContent);
   render();
   assert.equal(oauth(), undefined);
-  const cookies = context.fields.updateCookieStatus.children[0].children.map(item => item.textContent);
+  const cookies = cookieTexts();
   context.fields.youtubeDataApiEnabled.checked = true;
   context.currentYoutubeOAuthStatus = { enabled: false };
   render();
@@ -863,8 +865,9 @@ test('OAuth status follows the checkbox without altering cookie statuses or enab
     render();
     assert.equal(oauth().textContent, `OAuth: ${label}`);
     assert.match(oauth().title, /Local check.*2099/);
-    assert.equal(context.fields.updateCookieStatus.children.at(-1), oauth());
-    assert.deepEqual(context.fields.updateCookieStatus.children[0].children.map(item => item.textContent), cookies);
+    assert.equal(context.fields.updateCookieStatus.children.at(-1), tail());
+    assert.equal(tail().children.at(-1), oauth());
+    assert.deepEqual(cookieTexts(), cookies);
     context.fields.youtubeDataApiEnabled.checked = false;
     render();
     assert.equal(oauth(), undefined);
@@ -872,6 +875,8 @@ test('OAuth status follows the checkbox without altering cookie statuses or enab
   }
   assert.match(adminSource, /youtubeDataApiEnabled\.addEventListener\('change',[\s\S]{0,100}renderUpdateCookieStatuses/);
   assert.match(adminSource, /settingsDirty = fields\.youtubeDataApiEnabled\.checked !== apiEnabled/);
+  assert.match(source('admin.html'), /\.cookie-oauth-tail \{ display: inline-flex; flex-wrap: wrap; gap: 4px 16px; \}/);
+  assert.doesNotMatch(source('admin.html'), /cookie-auth-group/);
 });
 
 test('admin log messages identify completed Archivarix requests', () => {

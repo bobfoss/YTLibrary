@@ -262,10 +262,6 @@ function renderUpdateCookieStatuses(statuses = {}) {
     item.title = status.message;
     children.push(item);
   });
-  const cookies = document.createElement('span');
-  cookies.className = 'cookie-auth-group';
-  cookies.replaceChildren(...children);
-  const groups = [cookies];
   if (fields.youtubeDataApiEnabled.checked) {
     const status = currentYoutubeOAuthStatus;
     const item = document.createElement('span');
@@ -275,9 +271,12 @@ function renderUpdateCookieStatuses(statuses = {}) {
     item.title = status.enabled
       ? `${status.message || ''}${status.expiresAt ? ` Access token expiry: ${fmtTime(status.expiresAt)}.` : ''}`
       : 'Save the API option to enable collection. Checking this box alone does not enable it.';
-    groups.push(item);
+    const tail = document.createElement('span');
+    tail.className = 'cookie-oauth-tail';
+    tail.replaceChildren(children.pop(), item);
+    children.push(tail);
   }
-  fields.updateCookieStatus.replaceChildren(...groups);
+  fields.updateCookieStatus.replaceChildren(...children);
 }
 
 async function loadCookieStatuses() {
