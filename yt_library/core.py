@@ -7059,7 +7059,8 @@ def save_youtube_data_api_snapshot(
             playlist_items_inserted += 1
         from .playlist_dates import apply_added_dates
         apply_added_dates(conn, playlist_id, [
-            {"video_id": item.video_id, "added_at": item.published_at, "added_at_source": "youtube_api"}
+            {"video_id": item.video_id, "added_at": item.published_at, "added_at_source": "youtube_api",
+             "set_video_id": item.set_video_id}
             for item in playlist.items
         ])
         if (

@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import base64
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tests.support import migrated_connection
 from yt_library import core
 from yt_library.config import configured_youtube_data_api_enabled
-from yt_library.playlist_dates import apply_added_dates, collect_playlist_dates, match_music_dates, valid_added_date
+from yt_library.playlist_dates import api_playlist_dates, apply_added_dates, collect_playlist_dates, match_music_dates, valid_added_date
 from yt_library.queries import video_collection_data
 
 
@@ -52,6 +53,52 @@ class PlaylistDateCollectionTests(unittest.TestCase):
             self.conn.execute("UPDATE playlist_items SET set_video_id='b' WHERE video_id='two'")
         self.assertEqual(apply_added_dates(self.conn, "PLtest", [dict(evidence, video_id="two")]), 0)
         self.assertIsNone(self.conn.execute("SELECT added_at FROM playlist_items WHERE video_id='two'").fetchone()[0])
+
+    def test_occurrence_enrichment_preserves_known_dates_sources_and_rows(self):
+        with self.conn:
+            self.conn.execute("UPDATE playlist_items SET added_at='2025-01-01', added_at_source='takeout', first_seen_at='2025-02-01T00:00:00Z' WHERE video_id='one'")
+        before = tuple(self.conn.execute("SELECT rowid,position,video_id,added_at,added_at_source,first_seen_at FROM playlist_items WHERE video_id='one'").fetchone())
+        evidence = {"video_id": "one", "set_video_id": "090796A75D153932", "added_at": "2025-01-01", "added_at_source": "youtube_api"}
+        self.assertEqual(apply_added_dates(self.conn, "PLtest", [evidence]), 1)
+        self.assertEqual(tuple(self.conn.execute("SELECT rowid,position,video_id,added_at,added_at_source,first_seen_at FROM playlist_items WHERE video_id='one'").fetchone()), before)
+        self.assertEqual(self.conn.execute("SELECT set_video_id FROM playlist_items WHERE video_id='one'").fetchone()[0], evidence["set_video_id"])
+        self.assertEqual(apply_added_dates(self.conn, "PLtest", [evidence]), 0)
+
+    def test_conflicting_dates_do_not_attach_an_occurrence_to_possible_readd(self):
+        with self.conn:
+            self.conn.execute("UPDATE playlist_items SET added_at='2025-01-01', added_at_source='takeout' WHERE video_id='one'")
+        self.assertEqual(apply_added_dates(self.conn, "PLtest", [{"video_id": "one", "set_video_id": "090796A75D153932", "added_at": "2025-02-01", "added_at_source": "youtube_api"}]), 0)
+        self.assertEqual(self.conn.execute("SELECT set_video_id FROM playlist_items WHERE video_id='one'").fetchone()[0], "")
+
+    def test_ambiguous_or_foreign_occurrences_never_attach_by_position(self):
+        evidence = {"video_id": "one", "set_video_id": "090796A75D153932", "added_at": "2025-01-01", "added_at_source": "youtube_api", "position": 1}
+        self.assertEqual(apply_added_dates(self.conn, "PLtest", [evidence, dict(evidence, video_id="two")]), 0)
+        with self.conn:
+            self.conn.execute("UPDATE playlist_items SET video_id='one' WHERE video_id='two'")
+        self.assertEqual(apply_added_dates(self.conn, "PLtest", [evidence]), 0)
+        with self.conn:
+            self.conn.execute("UPDATE playlist_items SET set_video_id=? WHERE position=1", (evidence["set_video_id"],))
+        self.assertEqual(apply_added_dates(self.conn, "PLtest", [dict(evidence, video_id="not-one")]), 0)
+        self.assertEqual(apply_added_dates(self.conn, "PLtest", [evidence]), 1)
+        self.assertIsNone(self.conn.execute("SELECT added_at FROM playlist_items WHERE position=2").fetchone()[0])
+        with self.conn:
+            self.conn.execute("UPDATE playlist_items SET set_video_id=? WHERE position=2", (evidence["set_video_id"],))
+        self.assertEqual(apply_added_dates(self.conn, "PLtest", [evidence]), 0)
+
+    def test_api_stages_all_pages_with_guarded_ids_before_matching(self):
+        service = Mock()
+        encoded = base64.urlsafe_b64encode(b"PLtest.090796A75D153932").decode()
+        pages = [{"items": [{"id": encoded, "snippet": {"resourceId": {"videoId": "one"}, "publishedAt": "2025-01-01"}}], "nextPageToken": "second"},
+                 {"items": [{"id": "unknown-format", "snippet": {"resourceId": {"videoId": "two"}, "publishedAt": "2025-02-01"}}]}]
+        service.playlistItems.return_value.list.return_value.execute.side_effect = pages
+        with patch("yt_library.playlist_dates.build_youtube_data_service", return_value=service), patch("yt_library.playlist_dates.pace_outbound_request") as pace:
+            evidence = api_playlist_dates({"youtube_oauth_client_secrets": "client.json", "youtube_oauth_token": "token.json"}, "PLtest")
+        self.assertEqual([row["set_video_id"] for row in evidence], ["090796A75D153932", ""])
+        self.assertEqual(pace.call_count, 2)
+        self.assertEqual(service.playlistItems.return_value.list.call_args.kwargs["pageToken"], "second")
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM playlist_items WHERE added_at IS NOT NULL OR set_video_id!=''").fetchone()[0], 0)
+        self.assertEqual(apply_added_dates(self.conn, "PLtest", evidence), 2)
+        self.assertEqual(self.conn.execute("SELECT added_at FROM playlist_items WHERE video_id='two'").fetchone()[0], "2025-02-01")
 
     def test_api_disabled_by_default_and_failures_preserve_dates(self):
         self.assertFalse(configured_youtube_data_api_enabled({}))

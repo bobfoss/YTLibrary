@@ -371,6 +371,8 @@ scans try the configured API grant when enabled, then authenticated Music web
 evidence for unresolved dates. Missing/rejected credentials fall back safely;
 no consent window opens during background work. Takeout's Playlist Video Creation
 Timestamp also supplies added-date evidence. Existing reliable dates are preserved.
+API collection also retains verified playlist occurrence IDs when the returned
+identity matches an existing membership; it does not require extra API requests.
 
 Playlist cards show **Date added**, or **First seen** when only that is known.
 First seen is recorded for new members after an established complete scan, not

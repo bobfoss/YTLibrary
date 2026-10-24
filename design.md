@@ -1482,6 +1482,19 @@ alter membership. `date_checked_at` limits retries to daily, reset on new
 memberships. Header-only scans do not collect dates. Broad account API snapshots
 remain explicit CLI work, not automatic token-presence-triggered Update work.
 
+API playlist-item IDs currently encode `playlist_id.set_video_id` as base64url.
+Fresh API/web comparisons matched every occurrence in 2026 Summer sets (22)
+and WL2 (2,121). This is undocumented: accept only canonical base64url, the
+requested playlist prefix, and a 16-character uppercase hexadecimal suffix,
+preserving leading zeros. Unknown formats leave the occurrence ID blank without
+discarding otherwise valid dates. API responses are staged in memory before
+database matching; only the decoded occurrence ID is persisted, not the opaque
+API wrapper. Enrichment requires a unique matching occurrence or unique video
+on both sides; duplicate/conflicting identities and conflicting dates are
+rejected. A missing occurrence ID can be filled even when an existing reliable
+date and its provenance already exist, without replacing either. No additional
+API requests or automatic collection trigger are introduced for IDs alone.
+
 Playlist grid and detailed member cards display **Date added**, otherwise
 **First seen**, otherwise no date line. Compact cards hide the line. Date-only
 evidence stays date-only, and exact UTC values use the configured display timezone.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +17,7 @@ from yt_library.youtube_data_api import (
     YouTubeSubscription,
     build_youtube_data_service,
     fetch_youtube_account_snapshot,
+    playlist_item_set_video_id,
 )
 
 
@@ -92,6 +94,7 @@ class FakeService:
                 ("PLone", ""): {
                     "items": [
                         {
+                            "id": base64.urlsafe_b64encode(b"PLone.090796A75D153932").decode().rstrip("="),
                             "snippet": {
                                 "title": "Video one",
                                 "position": 0,
@@ -115,6 +118,21 @@ class FakeService:
 
 
 class YouTubeDataApiTests(unittest.TestCase):
+    def test_occurrence_decoder_requires_verified_shape_and_playlist(self) -> None:
+        def encode(value):
+            return base64.urlsafe_b64encode(value).decode()
+
+        encoded = encode(b"PLtest.090796A75D153932")
+        for value in (encoded, encoded.rstrip("=")):
+            self.assertEqual(playlist_item_set_video_id("PLtest", value), "090796A75D153932")
+        for value in (None, 123, "", "invalid!", " " + encoded, encoded + "=", "A" * 300,
+                      encode(b"PLother.090796A75D153932"), encode(b"PLtestX.090796A75D153932"),
+                      encode(b"PLtest.090796A75D15393"), encode(b"PLtest.090796a75d153932"),
+                      encode(b"PLtest.090796A75D153932.extra"), encode(b"PLtest.\xff"), encode(b"PLtest")):
+            with self.subTest(value=value):
+                self.assertEqual(playlist_item_set_video_id("PLtest", value), "")
+        self.assertEqual(playlist_item_set_video_id("", encoded), "")
+
     def test_service_uses_configured_socks_proxy(self) -> None:
         build = Mock(return_value="service")
         credentials = Mock()
@@ -151,6 +169,7 @@ class YouTubeDataApiTests(unittest.TestCase):
         self.assertEqual(snapshot.playlists[0].published_at, "2022-03-04T05:06:07Z")
         self.assertEqual(snapshot.playlists[0].items[0].position, 1)
         self.assertEqual(snapshot.playlists[0].items[0].published_at, "2023-04-05T06:07:08Z")
+        self.assertEqual(snapshot.playlists[0].items[0].set_video_id, "090796A75D153932")
         self.assertEqual(
             [call["pageToken"] for call in service.subscription_resource.calls],
             [None, "second"],
@@ -178,6 +197,7 @@ class YouTubeDataApiTests(unittest.TestCase):
                             1,
                             "Video one",
                             "2023-04-05T06:07:08Z",
+                            "090796A75D153932",
                         ),
                     ),
                 ),
@@ -215,6 +235,7 @@ class YouTubeDataApiTests(unittest.TestCase):
         self.assertEqual(old["subscribed"], 0)
         self.assertEqual(playlist["created_at"], "2022-03-04T05:06:07Z")
         self.assertEqual(item["added_at"], "2023-04-05T06:07:08Z")
+        self.assertEqual(item["set_video_id"], "090796A75D153932")
         self.assertEqual(scans, 0)
 
     def test_optional_account_sync_logs_missing_sources_and_completes_queue_item(self) -> None:

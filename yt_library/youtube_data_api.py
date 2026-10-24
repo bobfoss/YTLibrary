@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import os
+import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,6 +41,7 @@ class YouTubePlaylistItem:
     position: int
     title: str
     published_at: str
+    set_video_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -56,6 +60,26 @@ class YouTubePlaylist:
 class YouTubeAccountSnapshot:
     subscriptions: tuple[YouTubeSubscription, ...]
     playlists: tuple[YouTubePlaylist, ...]
+
+
+def playlist_item_set_video_id(playlist_id: str, item_id: Any) -> str:
+    """Decode the verified API occurrence format, failing closed if it changes."""
+    if not playlist_id or not isinstance(item_id, str) or len(item_id) > 256:
+        return ""
+    if not re.fullmatch(r"[A-Za-z0-9_-]+={0,2}", item_id):
+        return ""
+    try:
+        decoded = base64.b64decode(item_id + "=" * (-len(item_id) % 4), altchars=b"-_", validate=True)
+        canonical = base64.urlsafe_b64encode(decoded).decode("ascii")
+        if item_id not in (canonical, canonical.rstrip("=")):
+            return ""
+        prefix, separator, set_id = decoded.decode("ascii").partition(".")
+    except (ValueError, UnicodeError, binascii.Error):
+        return ""
+    # Undocumented encoding: never adopt another playlist's ID or guess a new shape.
+    if separator and prefix == playlist_id and re.fullmatch(r"[0-9A-F]{16}", set_id):
+        return set_id
+    return ""
 
 
 def _google_dependencies() -> tuple[Any, Any, Any, Any]:
@@ -301,6 +325,7 @@ def fetch_youtube_account_snapshot(
                         position=max(0, int(snippet.get("position") or 0)) + 1,
                         title=str(snippet.get("title") or ""),
                         published_at=str(snippet.get("publishedAt") or ""),
+                        set_video_id=playlist_item_set_video_id(playlist_id, item.get("id")),
                     )
                 )
         snippet = playlist_row.get("snippet") or {}

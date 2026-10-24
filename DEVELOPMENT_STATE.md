@@ -51,6 +51,11 @@ facts, transient PIDs, or other runtime-only data here.
   never to existing undated members, first-scan baselines, or header-only checks.
   `added_at_source` records `youtube_api`, `music_web`, `takeout`, or `unknown`.
   Existing dates survive missing or conflicting enrichment evidence.
+- API item IDs also supply `set_video_id` through guarded base64url decoding,
+  verified against all 22 Summer sets and 2,121 WL2 web occurrences. Evidence
+  stays temporary until an unambiguous database membership match; unknown
+  formats and identity/date conflicts are not adopted. Existing reliable dates
+  and provenance survive ID-only enrichment. This adds no API polling trigger.
 - Playlist cards display **Date added**, else **First seen**, else no line.
   Playlist-member chronological sorting uses the same chosen value, unknowns
   last; other video views never borrow an arbitrary membership date.

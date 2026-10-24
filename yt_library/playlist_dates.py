@@ -12,7 +12,7 @@ from typing import Any, Callable
 from .config import config_path, configured_proxy
 from .request_pacing import pace_outbound_request
 from .time_utils import utc_now
-from .youtube_data_api import build_youtube_data_service, _response_pages
+from .youtube_data_api import build_youtube_data_service, playlist_item_set_video_id, _response_pages
 from .network import ProxyUnavailableError, proxy_unavailable_error
 
 
@@ -41,6 +41,7 @@ def valid_added_date(value: Any) -> str:
 
 
 def apply_added_dates(conn: sqlite3.Connection, playlist_id: str, evidence: list[dict[str, Any]]) -> int:
+    """Match staged evidence to existing members; return enriched membership count."""
     rows = [dict(row) for row in conn.execute("SELECT rowid AS membership_rowid, * FROM playlist_items WHERE playlist_id=?", (playlist_id,))]
     counts = Counter(row["video_id"] for row in rows if row["video_id"])
     evidence_counts = Counter(row.get("video_id") for row in evidence if row.get("video_id"))
@@ -52,6 +53,8 @@ def apply_added_dates(conn: sqlite3.Connection, playlist_id: str, evidence: list
         if not date or item.get("added_at_source") not in {"youtube_api", "music_web", "takeout"}:
             continue
         set_id = item.get("set_video_id")
+        if set_id and (incoming_sets[set_id] != 1 or set_counts[set_id] > 1):
+            continue
         candidates = []
         if set_id and set_counts[set_id] == incoming_sets[set_id] == 1:
             candidates = [row for row in rows if row["set_video_id"] == set_id and (not item.get("video_id") or row["video_id"] == item["video_id"])]
@@ -64,11 +67,16 @@ def apply_added_dates(conn: sqlite3.Connection, playlist_id: str, evidence: list
             continue
         if row["added_at"] and row["added_at"] != date:
             continue
-        if row["added_at"] and row["added_at_source"] != "unknown":
+        added_at = row["added_at"] or date
+        source = row["added_at_source"]
+        if not row["added_at"] or source == "unknown":
+            source = item["added_at_source"]
+        occurrence_id = row["set_video_id"] or set_id or ""
+        if (added_at, source, occurrence_id) == (row["added_at"], row["added_at_source"], row["set_video_id"]):
             continue
         conn.execute("UPDATE playlist_items SET added_at=?, added_at_source=?, set_video_id=?, updated_at=? WHERE rowid=?",
-                     (date, item["added_at_source"], row["set_video_id"] or set_id or "", utc_now(), row["membership_rowid"]))
-        row.update(added_at=date, added_at_source=item["added_at_source"], set_video_id=row["set_video_id"] or set_id or "")
+                     (added_at, source, occurrence_id, utc_now(), row["membership_rowid"]))
+        row.update(added_at=added_at, added_at_source=source, set_video_id=occurrence_id)
         saved += 1
     return saved
 
@@ -88,7 +96,8 @@ def api_playlist_dates(config: dict[str, Any], playlist_id: str, *, should_stop:
         for item in response.get("items") or []:
             snippet = item.get("snippet") or {}
             result.append({"video_id": (snippet.get("resourceId") or {}).get("videoId", ""),
-                           "added_at": snippet.get("publishedAt"), "added_at_source": "youtube_api"})
+                           "added_at": snippet.get("publishedAt"), "added_at_source": "youtube_api",
+                           "set_video_id": playlist_item_set_video_id(playlist_id, item.get("id"))})
     return result
 
 
@@ -198,7 +207,7 @@ def collect_playlist_dates(conn: sqlite3.Connection, config: dict[str, Any], pla
             evidence = fetch(config, playlist_id, should_stop=should_stop)
             with conn:
                 count = apply_added_dates(conn, playlist_id, evidence)
-                log_playlist_scan_event(conn, "", "info", f"Playlist added dates: {count} saved from {source}; existing dates and membership preserved", playlist_id)
+                log_playlist_scan_event(conn, "", "info", f"Playlist date/occurrence evidence: {count} memberships enriched from {source}; existing dates and membership preserved", playlist_id)
             saved += count
         except DateCollectionStopped:
             with conn:
