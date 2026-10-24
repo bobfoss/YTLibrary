@@ -258,7 +258,7 @@ function renderUpdateCookieStatuses(statuses = {}) {
     item.className = status.tone === 'valid'
       ? 'cookie-auth-valid'
       : (status.tone === 'warn' ? 'cookie-auth-warn' : '');
-    item.textContent = `${label}: ${status.label}${status.checkedAt ? ` (${fmtTime(status.checkedAt)})` : ''}${index < labels.length - 1 ? ';' : ''}`;
+    item.textContent = `${label}: ${status.label}${status.checkedAt ? ` (checked: ${fmtTime(status.checkedAt)})` : ''}${index < labels.length - 1 ? ';' : ''}`;
     item.title = status.message;
     children.push(item);
   });
@@ -268,7 +268,7 @@ function renderUpdateCookieStatuses(statuses = {}) {
     const expiry = status.enabled && status.expiresAt ? fmtTime(status.expiresAt) : '';
     item.id = 'youtubeOAuthStatus';
     item.className = `oauth-status ${status.enabled && status.tone === 'valid' ? 'cookie-auth-valid' : (status.enabled && status.tone === 'warn' ? 'cookie-auth-warn' : '')}`;
-    item.textContent = `OAuth: ${status.enabled ? (status.label || 'status unavailable') : (status.enabled === false ? 'save to enable' : 'checking')}${expiry ? ` (${expiry})` : ''}`;
+    item.textContent = `OAuth: ${status.enabled ? (status.label || 'status unavailable') : (status.enabled === false ? 'save to enable' : 'checking')}${expiry ? ` (expires: ${expiry})` : ''}`;
     item.title = status.enabled
       ? `${status.message || ''}${expiry ? ` Access token expiry: ${expiry}.` : ''}`
       : 'Save the API option to enable collection. Checking this box alone does not enable it.';
