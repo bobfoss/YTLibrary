@@ -105,8 +105,8 @@ facts, transient PIDs, or other runtime-only data here.
   bookkeeping record the check.
 - Supported databases upgrade through ordered migrations. The fresh schema and
   every supported upgrade path must describe the same current model. The
-  schema version is 37, adding membership date provenance, first-observed and
-  YouTube occurrence identity, plus scan completeness/date-attempt bookkeeping.
+  schema version is 38, adding independent API/Music date-attempt timers on top
+  of membership date provenance, first-observed and YouTube occurrence identity.
 
 ## Browser And Search Model
 
@@ -303,6 +303,12 @@ facts, transient PIDs, or other runtime-only data here.
   entry into a non-valid state without repeating identical warnings. A service
   block caused by timeout, proxy, or quota evidence is separate from cookie
   validity.
+- Admin shows OAuth credential readiness to the right of cookie statuses when
+  the API checkbox is checked. It inspects only the configured token file and
+  distinguishes ready, refresh-on-use, missing/invalid and sign-in-required
+  states. This is not live Google verification and never refreshes credentials,
+  opens consent, or spends API quota during status polling. Unsaved enabling
+  shows Save to enable; disabled collection does not inspect the token file.
 - Inconclusive YouTube metadata checks do not automatically requeue videos with
   completed Archivarix recovery evidence; explicit manual recovery remains
   available. A later transient Archivarix failure updates the latest search

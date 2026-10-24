@@ -1494,6 +1494,16 @@ than guessing which source an older shared check used, preserving all existing
 membership/date evidence. Header-only scans do not collect dates. Broad account API snapshots
 remain explicit CLI work, not automatic token-presence-triggered Update work.
 
+Admin's cookie-status row appends OAuth readiness when the API checkbox is
+checked. The full and runtime status endpoints inspect the configured saved
+grant locally, returning only fixed status/label/message fields and access-token
+expiry. No token values, client secrets, raw parser errors, refresh requests or
+YouTube requests are exposed or triggered. Ready means locally unexpired, not
+remote validation; an expired refreshable token is distinguished from missing
+credentials or required sign-in. Disabled API collection does not read the grant.
+Unsaved enabling shows Save to enable; the existing explicit Save action still
+controls runtime API use.
+
 API playlist-item IDs currently encode `playlist_id.set_video_id` as base64url.
 Fresh API/web comparisons matched every occurrence in 2026 Summer sets (22)
 and WL2 (2,121). This is undocumented: accept only canonical base64url, the

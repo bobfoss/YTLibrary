@@ -833,6 +833,47 @@ test('admin shows durable remote cookie status separately from update results', 
   assert.match(adminSource, /renderUpdateCookieStatuses\(data\.cookieAuthStatuses \|\| \{\}\)/);
 });
 
+test('OAuth status follows the checkbox without altering cookie statuses or enabling API', () => {
+  const adminSource = source('admin.js');
+  const context = {
+    currentCookieAuthStatuses: {}, currentYoutubeOAuthStatus: {},
+    fields: {
+      youtubeDataApiEnabled: { checked: false },
+      updateCookieStatus: { replaceChildren(...children) { this.children = children; } },
+    },
+    document: { createTextNode: text => ({ textContent: text }), createElement: () => ({ replaceChildren(...children) { this.children = children; } }) },
+    effectiveCookieStatus: () => ({ label: 'valid', tone: 'valid', checkedAt: '', message: 'Cookie accepted' }),
+    fmtTime: value => value,
+  };
+  // Stop before the subsequent async loader rather than evaluating the whole page.
+  const start = adminSource.indexOf('function renderUpdateCookieStatuses(');
+  const end = adminSource.indexOf('async function loadCookieStatuses(', start);
+  vm.runInNewContext(adminSource.slice(start, end), context);
+  const render = () => context.renderUpdateCookieStatuses({ youtube: { status: 'valid' } });
+  const oauth = () => context.fields.updateCookieStatus.children.find(item => item.id === 'youtubeOAuthStatus');
+  render();
+  assert.equal(oauth(), undefined);
+  const cookies = context.fields.updateCookieStatus.children[0].children.map(item => item.textContent);
+  context.fields.youtubeDataApiEnabled.checked = true;
+  context.currentYoutubeOAuthStatus = { enabled: false };
+  render();
+  assert.equal(oauth().textContent, 'OAuth: save to enable');
+  for (const [label, tone] of [['ready', 'valid'], ['sign-in required', 'warn'], ['refresh on next use', '']]) {
+    context.currentYoutubeOAuthStatus = { enabled: true, label, tone, message: 'Local check', expiresAt: '2099-01-01T00:00:00Z' };
+    render();
+    assert.equal(oauth().textContent, `OAuth: ${label}`);
+    assert.match(oauth().title, /Local check.*2099/);
+    assert.equal(context.fields.updateCookieStatus.children.at(-1), oauth());
+    assert.deepEqual(context.fields.updateCookieStatus.children[0].children.map(item => item.textContent), cookies);
+    context.fields.youtubeDataApiEnabled.checked = false;
+    render();
+    assert.equal(oauth(), undefined);
+    context.fields.youtubeDataApiEnabled.checked = true;
+  }
+  assert.match(adminSource, /youtubeDataApiEnabled\.addEventListener\('change',[\s\S]{0,100}renderUpdateCookieStatuses/);
+  assert.match(adminSource, /settingsDirty = fields\.youtubeDataApiEnabled\.checked !== apiEnabled/);
+});
+
 test('admin log messages identify completed Archivarix requests', () => {
   const adminSource = source('admin.js');
 

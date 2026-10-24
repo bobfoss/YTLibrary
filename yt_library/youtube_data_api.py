@@ -8,6 +8,7 @@ import os
 import re
 import tempfile
 from dataclasses import dataclass
+from datetime import timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
@@ -180,6 +181,42 @@ def _load_credentials(client_secrets_path: Path, token_path: Path, proxy_url: st
             "The YouTube OAuth token is no longer valid; authorize it again." + suffix
         )
     return credentials
+
+
+def youtube_oauth_status(token_path: Path, *, enabled: bool) -> dict[str, Any]:
+    """Inspect saved credential readiness without refreshing or making requests."""
+    result = {"enabled": enabled, "status": "disabled", "label": "disabled",
+              "tone": "", "message": "YouTube Data API collection is disabled.", "expiresAt": ""}
+    if not enabled:
+        return result
+
+    def state(status: str, label: str, message: str, tone: str = "warn") -> dict[str, Any]:
+        return {**result, "status": status, "label": label, "tone": tone,
+                "message": message + " Local credential check only; not live verification with Google."}
+
+    try:
+        if not token_path.is_file():
+            return state("missing", "not configured", "The configured OAuth token file is missing. Run authorize-youtube-data-api to sign in.")
+        _Request, Credentials, _InstalledAppFlow, _build = _google_dependencies()
+        credentials = Credentials.from_authorized_user_file(str(token_path))
+        if not credentials.client_id or not credentials.client_secret:
+            return state("invalid", "sign-in required", "The saved OAuth credentials are incomplete. Run authorize-youtube-data-api again.")
+        if not credentials.has_scopes([YOUTUBE_READONLY_SCOPE]):
+            return state("scope_missing", "sign-in required", "The saved grant does not record the required YouTube read-only scope. Run authorize-youtube-data-api again.")
+        if credentials.expiry:
+            result["expiresAt"] = credentials.expiry.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+        if credentials.expired and credentials.refresh_token:
+            return state("refresh_pending", "refresh on next use", "The access token needs refreshing. A saved refresh token is available; collection will try to refresh it on the next API use.", "")
+        if credentials.valid:
+            return state("ready", "ready", "The saved access token is not expired. Revocation and server-side restrictions are detected only when it is used.", "valid")
+        return state("expired", "sign-in required", "The access token is unusable and cannot be refreshed. Run authorize-youtube-data-api again.")
+    except YouTubeDataApiNotConfigured:
+        return state("unavailable", "dependencies missing", "Install the Google API dependencies from requirements.txt.")
+    except OSError:
+        return state("unreadable", "file unavailable", "The configured OAuth token file cannot be read.")
+    except Exception:
+        # Credential parser errors can contain token contents; never expose them.
+        return state("invalid", "invalid credentials", "The configured OAuth token file could not be parsed. Run authorize-youtube-data-api again.")
 
 
 def build_youtube_data_service(

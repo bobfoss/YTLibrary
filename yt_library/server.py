@@ -1136,6 +1136,7 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
         if parsed.path == "/api/admin/runtime/status":
             data = admin_runtime_status(self.db_path, WORKER_QUEUE_DISPATCHER)
             data["service"] = self.service_status()
+            data["youtubeOAuthStatus"] = self.youtube_oauth_status()
             self.send_json(data)
             return
         if parsed.path == "/api/admin/status":
@@ -1157,6 +1158,7 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
             data["dispatchSettings"] = self.dispatch_settings()
             data["settings"] = self.admin_settings()
             data["service"] = self.service_status()
+            data["youtubeOAuthStatus"] = self.youtube_oauth_status()
             data["plugins"] = self.plugin_manager.statuses()
             self.send_json(data)
             return
@@ -3030,6 +3032,13 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
             "youtubeDataApiEnabled": configured_youtube_data_api_enabled(self.config_data),
             "adminAdvanced": configured_admin_advanced(self.config_data),
         }
+
+    def youtube_oauth_status(self) -> dict[str, Any]:
+        from .youtube_data_api import youtube_oauth_status
+        return youtube_oauth_status(
+            config_path(self.config_data, "youtube_oauth_token"),
+            enabled=configured_youtube_data_api_enabled(self.config_data),
+        )
 
     def service_status(self) -> dict[str, Any]:
         return {

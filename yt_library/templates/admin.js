@@ -131,6 +131,7 @@ const runtimeStatusPollMs = 5000;
 const statusPollMs = 30000;
 const cookieFileStatuses = {};
 let currentCookieAuthStatuses = {};
+let currentYoutubeOAuthStatus = {};
 const runtimeStatusRequestTimeoutMs = 5000;
 const statusRequestTimeoutMs = 15000;
 const logRequestTimeoutMs = 20000;
@@ -261,7 +262,22 @@ function renderUpdateCookieStatuses(statuses = {}) {
     item.title = status.message;
     children.push(item);
   });
-  fields.updateCookieStatus.replaceChildren(...children);
+  const cookies = document.createElement('span');
+  cookies.className = 'cookie-auth-group';
+  cookies.replaceChildren(...children);
+  const groups = [cookies];
+  if (fields.youtubeDataApiEnabled.checked) {
+    const status = currentYoutubeOAuthStatus;
+    const item = document.createElement('span');
+    item.id = 'youtubeOAuthStatus';
+    item.className = `oauth-status ${status.enabled && status.tone === 'valid' ? 'cookie-auth-valid' : (status.enabled && status.tone === 'warn' ? 'cookie-auth-warn' : '')}`;
+    item.textContent = `OAuth: ${status.enabled ? (status.label || 'status unavailable') : (status.enabled === false ? 'save to enable' : 'checking')}`;
+    item.title = status.enabled
+      ? `${status.message || ''}${status.expiresAt ? ` Access token expiry: ${fmtTime(status.expiresAt)}.` : ''}`
+      : 'Save the API option to enable collection. Checking this box alone does not enable it.';
+    groups.push(item);
+  }
+  fields.updateCookieStatus.replaceChildren(...groups);
 }
 
 async function loadCookieStatuses() {
@@ -955,6 +971,7 @@ function renderRuntimeStatus(data) {
   serviceStartedAtEpochMs = Number.isFinite(parsedStartedAt) ? parsedStartedAt : null;
   updateServiceUptime();
   fields.restartService.disabled = serviceState === 'restarting';
+  currentYoutubeOAuthStatus = data.youtubeOAuthStatus || {};
   renderUpdateCookieStatuses(data.cookieAuthStatuses || {});
 
   const queueWorkerRunning = Boolean(data.workerQueueRunning);
@@ -1008,6 +1025,8 @@ function render(data) {
     fields.proxyUrl.value = settings.proxy || '';
     fields.youtubeDataApiEnabled.checked = Boolean(settings.youtubeDataApiEnabled);
   }
+  currentYoutubeOAuthStatus = data.youtubeOAuthStatus || {};
+  renderUpdateCookieStatuses(currentCookieAuthStatuses);
   if (!hideEmptyFiltersSaving && !hideEmptyFiltersDirty) {
     savedHideEmptyFilters = settings.hideEmptyFilters !== false;
     fields.hideEmptyFilters.checked = savedHideEmptyFilters;
@@ -1349,13 +1368,14 @@ async function saveAdminSettings() {
   fields.saveSettings.disabled = true;
   fields.settingsStatus.textContent = 'Saving';
   const previousPid = currentServicePid;
+  const apiEnabled = fields.youtubeDataApiEnabled.checked;
   try {
     const payload = await AdminTransport.postJson('/api/admin/settings', {
       display_timezone: fields.displayTimezone.value.trim(),
       week_start: fields.weekStartMonday.checked ? 'monday' : 'sunday',
       use_proxy: fields.useProxy.checked ? '1' : '0',
       proxy: fields.proxyUrl.value.trim(),
-      youtube_data_api_enabled: fields.youtubeDataApiEnabled.checked ? '1' : '0',
+      youtube_data_api_enabled: apiEnabled ? '1' : '0',
     });
     const settings = payload.settings || {};
     fields.displayTimezone.value = settings.displayTimezone || fields.displayTimezone.value.trim();
@@ -1364,14 +1384,14 @@ async function saveAdminSettings() {
     fields.useProxy.checked = Boolean(settings.useProxy);
     fields.proxyUrl.value = settings.proxy || '';
     window.YTLibraryTime.apply(settings.displayTimezone || fields.displayTimezone.value);
-    settingsDirty = false;
+    settingsDirty = fields.youtubeDataApiEnabled.checked !== apiEnabled;
     if (payload.restartScheduled) {
       fields.settingsStatus.textContent = 'Restarting';
       await waitForServiceRestart(payload.service?.pid || previousPid);
     } else {
       await loadStatus({ force: true });
     }
-    fields.settingsStatus.textContent = 'Saved';
+    fields.settingsStatus.textContent = settingsDirty ? 'Unsaved changes' : 'Saved';
   } catch (error) {
     fields.settingsStatus.textContent = 'Save failed';
     alert(error.message);
@@ -1900,7 +1920,10 @@ fields.archivarixAutoRetry.addEventListener('change', () => {
   saveArchivarixAutoRetry();
 });
 fields.useProxy.addEventListener('change', () => { settingsDirty = true; });
-fields.youtubeDataApiEnabled.addEventListener('change', () => { settingsDirty = true; });
+fields.youtubeDataApiEnabled.addEventListener('change', () => {
+  settingsDirty = true;
+  renderUpdateCookieStatuses(currentCookieAuthStatuses);
+});
 fields.proxyUrl.addEventListener('input', () => { settingsDirty = true; });
 fields.saveSettings.addEventListener('click', saveAdminSettings);
 fields.restartService.addEventListener('click', restartServiceNow);

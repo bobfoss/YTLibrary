@@ -1099,6 +1099,7 @@ class AdminServerTests(unittest.TestCase):
         handler = object.__new__(server.LibraryHandler)
         handler.db_path = Path("library.sqlite3")
         handler.service_status = Mock(return_value={"status": "running", "pid": 321})
+        handler.youtube_oauth_status = Mock(return_value={"enabled": True, "status": "ready"})
         handler.send_json = Mock()
         runtime_payload = {
             "workerQueueRunning": True,
@@ -1122,8 +1123,17 @@ class AdminServerTests(unittest.TestCase):
             {
                 **runtime_payload,
                 "service": {"status": "running", "pid": 321},
+                "youtubeOAuthStatus": {"enabled": True, "status": "ready"},
             }
         )
+
+    def test_oauth_status_uses_only_the_configured_token_and_enabled_flag(self) -> None:
+        handler = object.__new__(server.LibraryHandler)
+        handler.config_data = {"youtube_oauth_token": str(Path("configured-token.json").resolve()),
+                               "youtube_data_api_enabled": True}
+        with patch("yt_library.youtube_data_api.youtube_oauth_status", return_value={"status": "ready"}) as status:
+            self.assertEqual(handler.youtube_oauth_status(), {"status": "ready"})
+            status.assert_called_once_with(Path("configured-token.json").resolve(), enabled=True)
 
     def test_service_status_includes_current_server_time(self) -> None:
         handler = object.__new__(server.LibraryHandler)
