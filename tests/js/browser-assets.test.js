@@ -843,7 +843,7 @@ test('OAuth status follows the checkbox without altering cookie statuses or enab
     },
     document: { createTextNode: text => ({ textContent: text }), createElement: () => ({ replaceChildren(...children) { this.children = children; } }) },
     effectiveCookieStatus: () => ({ label: 'valid', tone: 'valid', checkedAt: '', message: 'Cookie accepted' }),
-    fmtTime: value => value,
+    fmtTime: value => `formatted:${value}`,
   };
   // Stop before the subsequent async loader rather than evaluating the whole page.
   const start = adminSource.indexOf('function renderUpdateCookieStatuses(');
@@ -857,13 +857,13 @@ test('OAuth status follows the checkbox without altering cookie statuses or enab
   assert.equal(oauth(), undefined);
   const cookies = cookieTexts();
   context.fields.youtubeDataApiEnabled.checked = true;
-  context.currentYoutubeOAuthStatus = { enabled: false };
+  context.currentYoutubeOAuthStatus = { enabled: false, expiresAt: '2099-01-01T00:00:00Z' };
   render();
   assert.equal(oauth().textContent, 'OAuth: save to enable');
   for (const [label, tone] of [['ready', 'valid'], ['sign-in required', 'warn'], ['refresh on next use', '']]) {
     context.currentYoutubeOAuthStatus = { enabled: true, label, tone, message: 'Local check', expiresAt: '2099-01-01T00:00:00Z' };
     render();
-    assert.equal(oauth().textContent, `OAuth: ${label}`);
+    assert.equal(oauth().textContent, `OAuth: ${label} (formatted:2099-01-01T00:00:00Z)`);
     assert.match(oauth().title, /Local check.*2099/);
     assert.equal(context.fields.updateCookieStatus.children.at(-1), tail());
     assert.equal(tail().children.at(-1), oauth());
@@ -873,6 +873,9 @@ test('OAuth status follows the checkbox without altering cookie statuses or enab
     assert.equal(oauth(), undefined);
     context.fields.youtubeDataApiEnabled.checked = true;
   }
+  context.currentYoutubeOAuthStatus = { enabled: true, label: 'not configured' };
+  render();
+  assert.equal(oauth().textContent, 'OAuth: not configured');
   assert.match(adminSource, /youtubeDataApiEnabled\.addEventListener\('change',[\s\S]{0,100}renderUpdateCookieStatuses/);
   assert.match(adminSource, /settingsDirty = fields\.youtubeDataApiEnabled\.checked !== apiEnabled/);
   assert.match(source('admin.html'), /\.cookie-oauth-tail \{ display: inline-flex; flex-wrap: wrap; gap: 4px 16px; \}/);

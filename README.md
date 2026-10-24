@@ -378,7 +378,7 @@ web, so enabling API access is not blocked by an earlier Music attempt. Manual
 playlist-member scans bypass the cooldowns. Automatic skips are logged with the
 source and next eligible time; header-only scans do not collect member dates.
 When the API option is checked, Admin shows **OAuth** beside the cookie statuses.
-This reports local credential readiness and access-token expiry (in the tooltip),
+This reports local credential readiness and access-token expiry (in parentheses),
 not live Google verification. An expired access token with a refresh token shows
 **refresh on next use**; status polling never refreshes credentials or calls the
 API. The checkbox still requires **Save** to change collection behavior.

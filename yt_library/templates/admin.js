@@ -265,11 +265,12 @@ function renderUpdateCookieStatuses(statuses = {}) {
   if (fields.youtubeDataApiEnabled.checked) {
     const status = currentYoutubeOAuthStatus;
     const item = document.createElement('span');
+    const expiry = status.enabled && status.expiresAt ? fmtTime(status.expiresAt) : '';
     item.id = 'youtubeOAuthStatus';
     item.className = `oauth-status ${status.enabled && status.tone === 'valid' ? 'cookie-auth-valid' : (status.enabled && status.tone === 'warn' ? 'cookie-auth-warn' : '')}`;
-    item.textContent = `OAuth: ${status.enabled ? (status.label || 'status unavailable') : (status.enabled === false ? 'save to enable' : 'checking')}`;
+    item.textContent = `OAuth: ${status.enabled ? (status.label || 'status unavailable') : (status.enabled === false ? 'save to enable' : 'checking')}${expiry ? ` (${expiry})` : ''}`;
     item.title = status.enabled
-      ? `${status.message || ''}${status.expiresAt ? ` Access token expiry: ${fmtTime(status.expiresAt)}.` : ''}`
+      ? `${status.message || ''}${expiry ? ` Access token expiry: ${expiry}.` : ''}`
       : 'Save the API option to enable collection. Checking this box alone does not enable it.';
     const tail = document.createElement('span');
     tail.className = 'cookie-oauth-tail';
