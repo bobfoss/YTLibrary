@@ -373,6 +373,10 @@ no consent window opens during background work. Takeout's Playlist Video Creatio
 Timestamp also supplies added-date evidence. Existing reliable dates are preserved.
 API collection also retains verified playlist occurrence IDs when the returned
 identity matches an existing membership; it does not require extra API requests.
+Automatic date attempts have separate 24-hour cooldowns for the API and Music
+web, so enabling API access is not blocked by an earlier Music attempt. Manual
+playlist-member scans bypass the cooldowns. Automatic skips are logged with the
+source and next eligible time; header-only scans do not collect member dates.
 
 Playlist cards show **Date added**, or **First seen** when only that is known.
 First seen is recorded for new members after an established complete scan, not

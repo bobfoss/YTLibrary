@@ -285,6 +285,8 @@ CREATE TABLE IF NOT EXISTS playlist_scans (
   scan_status TEXT NOT NULL DEFAULT '',
   scan_error TEXT NOT NULL DEFAULT '',
   date_checked_at TEXT,
+  api_date_checked_at TEXT,
+  music_date_checked_at TEXT,
   membership_complete INTEGER NOT NULL DEFAULT 0
 );
 

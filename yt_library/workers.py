@@ -114,6 +114,7 @@ from .core import (
     worker_queue_count,
     worker_queue_order_sql,
     worker_queue_rows_by_id,
+    worker_queue_payload,
     worker_queue_type_count,
     youtube_cookie_diagnostics,
     youtube_history_day_counts,
@@ -220,15 +221,6 @@ def youtube_authentication_debug_message(
 def archivarix_retry_delay(base_seconds: float, retry_number: int) -> float:
     cap = min(30.0, max(0.0, base_seconds) * (2 ** max(0, retry_number - 1)))
     return random.uniform(cap / 2, cap) if cap else 0.0
-
-
-def worker_queue_payload(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
-    values = dict(row)
-    try:
-        payload = json.loads(str(values.get("payload_json") or "{}"))
-    except json.JSONDecodeError:
-        return {}
-    return payload if isinstance(payload, dict) else {}
 
 
 def record_proxy_hold(
@@ -1240,6 +1232,7 @@ class PlaylistScanWorker(_ThreadWorkerLifecycle):
                                     ),
                                     priority=index,
                                     manual=is_new,
+                                    payload={"date_collection_manual": True} if row["manual"] else None,
                                 )
                             if queue_id:
                                 conn.execute(
@@ -1845,7 +1838,12 @@ class PlaylistScanWorker(_ThreadWorkerLifecycle):
                         ),
                     )
                 if date_config is not None and status == "ok" and not removed_from_library and not self._stop.is_set():
-                    collect_playlist_dates(conn, dict(date_config, youtube_cookies=str(row_cookie_file)), playlist_id, should_stop=self._stop.is_set)
+                    collect_playlist_dates(
+                        conn, dict(date_config, youtube_cookies=str(row_cookie_file)), playlist_id,
+                        should_stop=self._stop.is_set,
+                        manual=bool(row["manual"]) or payload.get("date_collection_manual") is True,
+                        run_id=run_id,
+                    )
                 if delay and worker_queue_type_count(conn, "playlist") > 0:
                     time.sleep(delay)
             with conn:

@@ -19,6 +19,35 @@ from tests.support import migrated_connection
 
 
 class AdminServerTests(unittest.TestCase):
+    def test_scan_all_bypasses_date_cooldown_without_broadening_member_refreshes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "library.sqlite3"
+            conn = migrated_connection(db_path)
+            with conn:
+                conn.executemany("INSERT INTO playlists(playlist_id,title) VALUES (?,?)",
+                                 [("PLone", "One"), ("PLtwo", "Two")])
+                core.enqueue_playlist_scan_item(conn, "PLone", payload={"cookie_file": "special.txt"})
+                core.enqueue_playlist_scan_item(conn, "PLtwo", manual=True, payload={"metadata_only": True})
+            conn.close()
+            handler = object.__new__(server.LibraryHandler)
+            handler.db_path = db_path
+            handler._start_worker_queue = Mock(return_value={"started": True})
+            handler.send_json = Mock()
+            handler._handle_playlist_scan_start({})
+            conn = core.connect(db_path)
+            try:
+                rows = {r["playlist_id"]: r for r in core.playlist_scan_queue_rows(conn)}
+                self.assertTrue(rows[""]["manual"])
+                self.assertFalse(rows["PLone"]["manual"])
+                self.assertTrue(rows["PLtwo"]["manual"])
+                self.assertEqual(core.worker_queue_payload(rows["PLone"]), {"cookie_file": "special.txt", "date_collection_manual": True})
+                self.assertEqual(core.worker_queue_payload(rows["PLtwo"]), {"metadata_only": True, "date_collection_manual": True})
+                with conn:
+                    core.enqueue_playlist_scan_item(conn, "PLone")
+                self.assertTrue(core.worker_queue_payload(next(r for r in core.playlist_scan_queue_rows(conn) if r["playlist_id"] == "PLone"))["date_collection_manual"])
+            finally:
+                conn.close()
+
     def test_playlist_metadata_only_start_queues_all_playlists_and_starts_dispatcher(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "library.sqlite3"

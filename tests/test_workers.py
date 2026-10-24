@@ -2150,6 +2150,60 @@ class WorkerQueueTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_playlist_worker_passes_manual_queue_intent_to_date_collection(self) -> None:
+        for manual, batch_manual in ((False, False), (True, False), (False, True)):
+            with self.subTest(manual=manual, batch_manual=batch_manual), tempfile.TemporaryDirectory() as temp_dir:
+                db_path = Path(temp_dir) / "library.sqlite3"
+                conn = migrated_connection(db_path)
+                with conn:
+                    conn.execute("INSERT INTO playlists(playlist_id,title) VALUES ('PLdates','Dates')")
+                    core.enqueue_playlist_scan_item(conn, "PLdates", manual=manual,
+                                                    payload={"date_collection_manual": True} if batch_manual else None)
+                conn.close()
+                worker = PlaylistScanWorker()
+                with (
+                    patch("yt_library.workers.load_cookie_opener", return_value=object()),
+                    patch("yt_library.workers.request_text", return_value="header page"),
+                    patch("yt_library.workers.extract_playlist_metadata", return_value={"title": "Dates", "video_count": 1, "has_video_count": True, "visibility": "public"}),
+                    patch("yt_library.workers.fetch_playlist_collaboration_metadata", return_value={}),
+                    patch("yt_library.workers.scan_playlist_ytdlp", return_value=([{"video_id": "one"}], {})),
+                    patch("yt_library.workers.enqueue_placeholder_recovery_targets", return_value={"inserted": 0}),
+                    patch("yt_library.workers.enqueue_playlist_metadata_targets", return_value={"queued_count": 0, "inserted_count": 0}) as metadata,
+                    patch("yt_library.workers.collect_playlist_dates", return_value=0) as collect,
+                ):
+                    worker._run("date-run", db_path, Path(temp_dir) / "cookies.txt", delay=0, limit=1,
+                                force=True, record_summary=False, date_config={"youtube_data_api_enabled": True})
+                collect.assert_called_once()
+                self.assertEqual(collect.call_args.args[2], "PLdates")
+                self.assertEqual(collect.call_args.kwargs["manual"], manual or batch_manual)
+                self.assertEqual(collect.call_args.kwargs["run_id"], "date-run")
+                self.assertEqual(collect.call_args.kwargs["should_stop"], worker._stop.is_set)
+                self.assertEqual(metadata.call_args.kwargs, {"never_fetched_only": not manual, "manual": manual})
+
+    def test_manual_discovery_preserves_scan_scope_and_propagates_date_bypass(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "library.sqlite3"
+            conn = migrated_connection(db_path)
+            with conn:
+                conn.execute("INSERT INTO playlists(playlist_id,title,in_library) VALUES ('PLknown','Known',1)")
+                core.enqueue_playlist_scan_item(conn, "PLknown", payload={"cookie_file": "special.txt"})
+                core.enqueue_playlist_discovery_item(conn, manual=True)
+                core.enqueue_playlist_discovery_item(conn, mode="new")
+            conn.close()
+            with (
+                patch("yt_library.workers.load_cookie_opener", return_value=object()),
+                patch("yt_library.workers.fetch_current_youtube_playlists", return_value=(object(), [{"playlist_id": "PLknown", "title": "Known", "video_count": 1}])),
+            ):
+                PlaylistScanWorker()._run("manual-discovery", db_path, Path(temp_dir) / "cookies.txt",
+                                          delay=0, limit=1, force=False, record_summary=False)
+            conn = core.connect(db_path)
+            try:
+                row = core.playlist_scan_queue_rows(conn)[0]
+                self.assertFalse(row["manual"])
+                self.assertEqual(core.worker_queue_payload(row), {"cookie_file": "special.txt", "date_collection_manual": True})
+            finally:
+                conn.close()
+
     def test_playlist_worker_metadata_only_skips_members_and_related_queues(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "library.sqlite3"
@@ -2211,6 +2265,7 @@ class WorkerQueueTests(unittest.TestCase):
                 patch(
                     "yt_library.workers.enqueue_placeholder_recovery_targets"
                 ) as enqueue_placeholders,
+                patch("yt_library.workers.collect_playlist_dates") as collect_dates,
             ):
                 worker._run(
                     "test-playlist-metadata-only",
@@ -2220,12 +2275,14 @@ class WorkerQueueTests(unittest.TestCase):
                     limit=1,
                     force=False,
                     record_summary=False,
+                    date_config={"youtube_data_api_enabled": True},
                 )
 
             scan_ytdlp.assert_not_called()
             scan_web.assert_not_called()
             enqueue_members.assert_not_called()
             enqueue_placeholders.assert_not_called()
+            collect_dates.assert_not_called()
             conn = core.connect(db_path)
             try:
                 playlist = conn.execute(

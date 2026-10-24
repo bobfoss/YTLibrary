@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import re
 import sqlite3
@@ -185,33 +185,58 @@ def match_music_dates(original: list[dict[str, Any]], music: list[dict[str, Any]
     return evidence
 
 
-def collect_playlist_dates(conn: sqlite3.Connection, config: dict[str, Any], playlist_id: str, *, should_stop: Callable[[], bool] | None = None) -> int:
+def collect_playlist_dates(
+    conn: sqlite3.Connection,
+    config: dict[str, Any],
+    playlist_id: str,
+    *,
+    should_stop: Callable[[], bool] | None = None,
+    manual: bool = False,
+    run_id: str = "",
+) -> int:
     from .core import log_playlist_scan_event
     from .config import configured_youtube_data_api_enabled
     missing = conn.execute("SELECT COUNT(*) FROM playlist_items WHERE playlist_id=? AND membership_state='current' AND video_id IS NOT NULL AND COALESCE(added_at,'')=''", (playlist_id,)).fetchone()[0]
-    scan = conn.execute("SELECT date_checked_at, scan_status FROM playlist_scans WHERE playlist_id=?", (playlist_id,)).fetchone()
+    scan = conn.execute("SELECT date_checked_at, api_date_checked_at, music_date_checked_at, scan_status FROM playlist_scans WHERE playlist_id=?", (playlist_id,)).fetchone()
     if not missing or not scan or scan["scan_status"] != "ok":
         return 0
-    if scan["date_checked_at"]:
-        elapsed = datetime.now(timezone.utc) - datetime.fromisoformat(scan["date_checked_at"].replace("Z", "+00:00"))
-        if elapsed.total_seconds() < 86400:
-            return 0
-    with conn:
-        conn.execute("UPDATE playlist_scans SET date_checked_at=? WHERE playlist_id=?", (utc_now(), playlist_id))
+    scan = dict(scan)
     saved = 0
-    for source, fetch in (("youtube_api", api_playlist_dates), ("music_web", web_playlist_dates)):
+    for source, column, fetch in (
+        ("youtube_api", "api_date_checked_at", api_playlist_dates),
+        ("music_web", "music_date_checked_at", web_playlist_dates),
+    ):
         if source == "youtube_api" and not configured_youtube_data_api_enabled(config):
             continue
+        if should_stop and should_stop():
+            break
+        if scan[column]:
+            retry_at = datetime.fromisoformat(scan[column].replace("Z", "+00:00")) + timedelta(days=1)
+            if datetime.now(timezone.utc) < retry_at:
+                with conn:
+                    if manual:
+                        message = f"Playlist added dates: {source} cooldown bypassed for manual scan"
+                    else:
+                        retry_text = retry_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                        message = f"Playlist added dates: skipped {source} (24-hour cooldown; next attempt {retry_text}); {missing} memberships still missing dates"
+                    log_playlist_scan_event(conn, run_id, "info", message, playlist_id)
+                if not manual:
+                    continue
+        previous_checked_at = scan["date_checked_at"]
+        checked_at = utc_now()
+        with conn:
+            conn.execute(f"UPDATE playlist_scans SET {column}=?, date_checked_at=? WHERE playlist_id=?", (checked_at, checked_at, playlist_id))
+        scan["date_checked_at"] = checked_at
         try:
             check_stop(should_stop)
             evidence = fetch(config, playlist_id, should_stop=should_stop)
             with conn:
                 count = apply_added_dates(conn, playlist_id, evidence)
-                log_playlist_scan_event(conn, "", "info", f"Playlist date/occurrence evidence: {count} memberships enriched from {source}; existing dates and membership preserved", playlist_id)
+                log_playlist_scan_event(conn, run_id, "info", f"Playlist date/occurrence evidence: {count} memberships enriched from {source}; existing dates and membership preserved", playlist_id)
             saved += count
         except DateCollectionStopped:
             with conn:
-                conn.execute("UPDATE playlist_scans SET date_checked_at=NULL WHERE playlist_id=?", (playlist_id,))
+                conn.execute(f"UPDATE playlist_scans SET {column}=NULL, date_checked_at=? WHERE playlist_id=?", (previous_checked_at, playlist_id))
             break
         except ProxyUnavailableError:
             raise
@@ -221,7 +246,7 @@ def collect_playlist_dates(conn: sqlite3.Connection, config: dict[str, Any], pla
                 raise proxy_error
             # Authentication failures can contain secrets; log only the type.
             with conn:
-                log_playlist_scan_event(conn, "", "warn", f"Playlist added dates: {source} unavailable ({type(exc).__name__}); existing evidence preserved", playlist_id)
+                log_playlist_scan_event(conn, run_id, "warn", f"Playlist added dates: {source} unavailable ({type(exc).__name__}); existing evidence preserved", playlist_id)
         missing = conn.execute("SELECT COUNT(*) FROM playlist_items WHERE playlist_id=? AND membership_state='current' AND video_id IS NOT NULL AND COALESCE(added_at,'')=''", (playlist_id,)).fetchone()[0]
         if not missing:
             break

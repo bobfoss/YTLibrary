@@ -1037,6 +1037,7 @@ class LibraryHandler(http.server.SimpleHTTPRequestHandler):
                     conn,
                     force=True,
                     discover_current=True,
+                    manual=True,
                 )
             )
         )

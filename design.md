@@ -1478,8 +1478,20 @@ fall back to authenticated Music web `voteSortValue` evidence joined through
 normal YouTube occurrence IDs, never Music's potentially substituted video ID.
 Invalid/future dates, explicit voting-enabled responses, ambiguous identities,
 and disagreements with existing dates are not adopted. Missing web rows never
-alter membership. `date_checked_at` limits retries to daily, reset on new
-memberships. Header-only scans do not collect dates. Broad account API snapshots
+alter membership. `api_date_checked_at` and `music_date_checked_at` independently
+limit automatic retries to once per source per day, including zero-result and
+failed attempts. A skipped source is logged with its name, retry time, and
+remaining undated membership count; the other source can still be attempted.
+Manual member scans bypass these cooldowns but still respect the API opt-in
+and missing-date guards. Individual scans use the queue row's `manual` flag,
+not the worker's `force` flag. Admin's Scan all playlists carries a
+`date_collection_manual` payload flag through discovery and existing queue
+entries, without changing which member videos receive metadata refreshes.
+New memberships reset both timers; cancellation clears only the
+interrupted source's timer. `date_checked_at` remains aggregate last-attempt
+bookkeeping, not a cooldown gate. Schema 38 starts source timers empty rather
+than guessing which source an older shared check used, preserving all existing
+membership/date evidence. Header-only scans do not collect dates. Broad account API snapshots
 remain explicit CLI work, not automatic token-presence-triggered Update work.
 
 API playlist-item IDs currently encode `playlist_id.set_video_id` as base64url.

@@ -61,7 +61,11 @@ facts, transient PIDs, or other runtime-only data here.
   last; other video views never borrow an arbitrary membership date.
 - Successful member scans fill missing dates using opt-in API access, then
   occurrence-matched Music web evidence. Requests are paced outside transactions;
-  unsuccessful enrichment has a one-day cooldown, reset by new memberships.
+  automatic attempts have independent one-day API/Music cooldowns, reset by new
+  memberships. Manual member scans bypass them; skipped sources log their retry
+  time. Schema 38 adds the source timers without guessing from old shared checks;
+  the retained `date_checked_at` is bookkeeping only. Cancellation resets only
+  the interrupted source. Header-only scans never collect member dates.
   `youtube_data_api_enabled` defaults off and is exposed in Advanced Admin.
   Update no longer runs the broad API account snapshot merely because a token
   exists; that operation remains available through the explicit CLI command.

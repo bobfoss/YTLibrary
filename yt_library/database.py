@@ -17,7 +17,7 @@ CHANNEL_SUBSCRIPTION_CAPTURE_START = "2026-07-30T20:34:50Z"
 CHANNEL_NOTIFICATION_CAPTURE_START = "2026-07-30T20:55:56Z"
 
 SCHEMA = load_schema()
-SCHEMA_VERSION = 37
+SCHEMA_VERSION = 38
 
 
 _DATABASE_BOOTSTRAP_LOCK = threading.Lock()
@@ -1375,6 +1375,14 @@ def _migrate_database(conn: sqlite3.Connection) -> None:
                         WHERE scan_status='ok' AND video_count=(
                           SELECT p.video_count FROM playlists p WHERE p.playlist_id=playlist_scans.playlist_id)""")
         conn.execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)", (37, utc_now()))
+
+    if current_version < 38:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(playlist_scans)")}
+        for name in ("api_date_checked_at", "music_date_checked_at"):
+            if name not in columns:
+                conn.execute(f"ALTER TABLE playlist_scans ADD COLUMN {name} TEXT")
+        # The old shared check cannot establish which source was attempted.
+        conn.execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)", (38, utc_now()))
 
 
 def _schema_version(conn: sqlite3.Connection) -> int:

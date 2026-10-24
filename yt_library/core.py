@@ -7939,7 +7939,7 @@ def save_playlist_scan(
     )
     conn.execute("UPDATE playlist_scans SET membership_complete=? WHERE playlist_id=?", (int(complete), playlist_id))
     if conn.execute("SELECT 1 FROM playlist_items WHERE playlist_id=? AND first_seen_at=? LIMIT 1", (playlist_id, now)).fetchone():
-        conn.execute("UPDATE playlist_scans SET date_checked_at=NULL WHERE playlist_id=?", (playlist_id,))
+        conn.execute("UPDATE playlist_scans SET date_checked_at=NULL, api_date_checked_at=NULL, music_date_checked_at=NULL WHERE playlist_id=?", (playlist_id,))
     if playlist_metadata:
         metadata = {
             key: str(playlist_metadata.get(key) or "").strip()
@@ -9205,6 +9205,15 @@ def enqueue_account_sync_task(
     return subject_key
 
 
+def worker_queue_payload(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+    values = dict(row)
+    try:
+        payload = json.loads(str(values.get("payload_json") or "{}"))
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def enqueue_playlist_scan_item(
     conn: sqlite3.Connection,
     playlist_id: str,
@@ -9229,6 +9238,13 @@ def enqueue_playlist_scan_item(
         if row:
             title = title or row["title"] or ""
     subject_key = playlist_queue_subject_key(playlist_id)
+    manual_dates = (payload or {}).get("date_collection_manual") is True
+    if manual_dates and not manual:
+        existing = conn.execute(
+            "SELECT payload_json FROM worker_queue WHERE subject_key=?", (subject_key,)
+        ).fetchone()
+        if existing:
+            payload = {**worker_queue_payload(existing), **(payload or {})}
     payload_json = json.dumps(
         payload or {},
         ensure_ascii=False,
@@ -9252,7 +9268,7 @@ def enqueue_playlist_scan_item(
           priority=MIN(worker_queue.priority, excluded.priority),
           manual=MAX(worker_queue.manual, excluded.manual),
           payload_json=CASE
-            WHEN excluded.manual = 1 THEN excluded.payload_json
+            WHEN excluded.manual = 1 OR ? = 1 THEN excluded.payload_json
             ELSE worker_queue.payload_json
           END,
           updated_at=excluded.updated_at
@@ -9267,6 +9283,7 @@ def enqueue_playlist_scan_item(
             payload_json,
             now,
             now,
+            int(manual_dates),
         ),
     )
     return subject_key
@@ -9277,6 +9294,7 @@ def enqueue_playlist_discovery_item(
     *,
     priority: int = -1,
     mode: str = "all",
+    manual: bool = False,
 ) -> str:
     now = utc_now()
     mode = (mode or "all").strip().lower()
@@ -9291,7 +9309,7 @@ def enqueue_playlist_discovery_item(
           created_at, updated_at
         )
         VALUES (?, 'playlist', 'discover', '', '', '', '', 'Current YouTube playlists',
-                ?, 0, ?, 0, ?, ?)
+                ?, 0, ?, ?, ?, ?)
         ON CONFLICT(subject_key) DO UPDATE SET
           worker_type='playlist',
           task_type='discover',
@@ -9300,9 +9318,10 @@ def enqueue_playlist_discovery_item(
             ELSE excluded.source_key
           END,
           priority=MIN(worker_queue.priority, excluded.priority),
+          manual=MAX(worker_queue.manual, excluded.manual),
           updated_at=excluded.updated_at
         """,
-        (subject_key, mode, int(priority), now, now),
+        (subject_key, mode, int(priority), int(manual), now, now),
     )
     return subject_key
 
@@ -9365,11 +9384,12 @@ def enqueue_all_playlist_scan_items(
     *,
     force: bool = False,
     discover_current: bool = False,
+    manual: bool = False,
 ) -> dict[str, int]:
     rows = playlist_scan_candidate_rows(conn, force=force)
     queued_before = playlist_scan_queue_count(conn)
     if discover_current:
-        enqueue_playlist_discovery_item(conn, mode="all")
+        enqueue_playlist_discovery_item(conn, mode="all", manual=manual)
     enqueue_playlist_scan_item(
         conn,
         LIKED_VIDEOS_PLAYLIST_ID,
@@ -9386,6 +9406,7 @@ def enqueue_all_playlist_scan_items(
             title=row["title"] or "",
             priority=index,
             manual=False,
+            payload={"date_collection_manual": True} if manual else None,
         )
     queued_after = playlist_scan_queue_count(conn)
     return {

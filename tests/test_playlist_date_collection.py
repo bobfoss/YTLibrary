@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from datetime import datetime, timedelta, timezone
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,7 +10,7 @@ from unittest.mock import Mock, patch
 from tests.support import migrated_connection
 from yt_library import core
 from yt_library.config import configured_youtube_data_api_enabled
-from yt_library.playlist_dates import api_playlist_dates, apply_added_dates, collect_playlist_dates, match_music_dates, valid_added_date
+from yt_library.playlist_dates import DateCollectionStopped, api_playlist_dates, apply_added_dates, collect_playlist_dates, match_music_dates, valid_added_date
 from yt_library.queries import video_collection_data
 
 
@@ -110,12 +111,101 @@ class PlaylistDateCollectionTests(unittest.TestCase):
             web.assert_called_once()
         self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM playlist_items WHERE first_seen_at IS NOT NULL").fetchone()[0], 0)
 
+    def test_music_attempt_does_not_cool_down_newly_enabled_api(self):
+        with patch("yt_library.playlist_dates.web_playlist_dates", return_value=[]):
+            collect_playlist_dates(self.conn, {}, "PLtest")
+        scan = self.conn.execute("SELECT * FROM playlist_scans").fetchone()
+        self.assertIsNone(scan["api_date_checked_at"])
+        self.assertTrue(scan["music_date_checked_at"])
+        evidence = [{"video_id": "one", "added_at": "2025-01-01", "added_at_source": "youtube_api"}]
+        with patch("yt_library.playlist_dates.api_playlist_dates", return_value=evidence) as api, patch("yt_library.playlist_dates.web_playlist_dates") as web:
+            self.assertEqual(collect_playlist_dates(self.conn, {"youtube_data_api_enabled": True}, "PLtest", run_id="enabled-api"), 1)
+            api.assert_called_once()
+            web.assert_not_called()
+        logs = [r[0] for r in self.conn.execute("SELECT message FROM playlist_scan_worker_log WHERE run_id='enabled-api'")]
+        self.assertTrue(any("enriched from youtube_api" in message for message in logs))
+        self.assertTrue(any("skipped music_web (24-hour cooldown; next attempt " in message and "1 memberships still missing dates" in message for message in logs))
+
+    def test_api_cooldown_does_not_block_eligible_music(self):
+        with self.conn:
+            self.conn.execute("UPDATE playlist_scans SET api_date_checked_at=?", (core.utc_now(),))
+        with patch("yt_library.playlist_dates.api_playlist_dates") as api, patch("yt_library.playlist_dates.web_playlist_dates", return_value=[]) as web:
+            collect_playlist_dates(self.conn, {"youtube_data_api_enabled": True}, "PLtest")
+            api.assert_not_called()
+            web.assert_called_once()
+        messages = [r[0] for r in self.conn.execute("SELECT message FROM playlist_scan_worker_log")]
+        self.assertTrue(any("skipped youtube_api (24-hour cooldown" in message for message in messages))
+
+    def test_manual_scan_bypasses_both_cooldowns_and_disabled_api_stays_off(self):
+        with self.conn:
+            self.conn.execute("UPDATE playlist_scans SET api_date_checked_at=?, music_date_checked_at=?", (core.utc_now(), core.utc_now()))
+        with patch("yt_library.playlist_dates.api_playlist_dates", return_value=[]) as api, patch("yt_library.playlist_dates.web_playlist_dates", return_value=[]) as web:
+            collect_playlist_dates(self.conn, {"youtube_data_api_enabled": True}, "PLtest", manual=True, run_id="manual")
+            api.assert_called_once()
+            web.assert_called_once()
+            collect_playlist_dates(self.conn, {}, "PLtest", manual=True)
+            self.assertEqual(api.call_count, 1)
+            self.assertEqual(web.call_count, 2)
+        messages = [r[0] for r in self.conn.execute("SELECT message FROM playlist_scan_worker_log WHERE run_id='manual'")]
+        self.assertTrue(any("youtube_api cooldown bypassed for manual scan" in message for message in messages))
+        self.assertTrue(any("music_web cooldown bypassed for manual scan" in message for message in messages))
+        with patch("yt_library.playlist_dates.api_playlist_dates") as api, patch("yt_library.playlist_dates.web_playlist_dates") as web:
+            collect_playlist_dates(self.conn, {"youtube_data_api_enabled": True}, "PLtest", run_id="automatic")
+            api.assert_not_called()
+            web.assert_not_called()
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM playlist_scan_worker_log WHERE run_id='automatic' AND message LIKE '%24-hour cooldown%'").fetchone()[0], 2)
+
+    def test_expired_source_cooldowns_retry(self):
+        old = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+        with self.conn:
+            self.conn.execute("UPDATE playlist_scans SET api_date_checked_at=?, music_date_checked_at=?", (old, old))
+        with patch("yt_library.playlist_dates.api_playlist_dates", return_value=[]) as api, patch("yt_library.playlist_dates.web_playlist_dates", return_value=[]) as web:
+            collect_playlist_dates(self.conn, {"youtube_data_api_enabled": True}, "PLtest")
+            api.assert_called_once()
+            web.assert_called_once()
+
+    def test_cancellation_clears_only_interrupted_source_timer(self):
+        evidence = [{"video_id": "one", "added_at": "2025-01-01", "added_at_source": "youtube_api"}]
+        with patch("yt_library.playlist_dates.api_playlist_dates", return_value=evidence), patch("yt_library.playlist_dates.web_playlist_dates", side_effect=DateCollectionStopped):
+            self.assertEqual(collect_playlist_dates(self.conn, {"youtube_data_api_enabled": True}, "PLtest"), 1)
+        scan = self.conn.execute("SELECT * FROM playlist_scans").fetchone()
+        self.assertTrue(scan["api_date_checked_at"])
+        self.assertIsNone(scan["music_date_checked_at"])
+        self.assertEqual(scan["date_checked_at"], scan["api_date_checked_at"])
+        with patch("yt_library.playlist_dates.api_playlist_dates") as api, patch("yt_library.playlist_dates.web_playlist_dates", return_value=[]) as web:
+            collect_playlist_dates(self.conn, {"youtube_data_api_enabled": True}, "PLtest")
+            api.assert_not_called()
+            web.assert_called_once()
+
+    def test_new_membership_resets_both_timers_but_unchanged_scan_does_not(self):
+        stamp = core.utc_now()
+        with self.conn:
+            self.conn.execute("UPDATE playlist_scans SET date_checked_at=?, api_date_checked_at=?, music_date_checked_at=?", (stamp, stamp, stamp))
+            core.save_playlist_scan(self.conn, "PLtest", [{"video_id": "one"}, {"video_id": "two"}], "ok", "")
+        columns = "date_checked_at, api_date_checked_at, music_date_checked_at"
+        self.assertEqual(tuple(self.conn.execute(f"SELECT {columns} FROM playlist_scans").fetchone()), (stamp, stamp, stamp))
+        with self.conn:
+            core.save_playlist_scan(self.conn, "PLtest", [{"video_id": "one"}, {"video_id": "two"}, {"video_id": "three"}], "ok", "")
+        self.assertEqual(tuple(self.conn.execute(f"SELECT {columns} FROM playlist_scans").fetchone()), (None, None, None))
+
+    def test_manual_scan_still_skips_complete_or_failed_memberships(self):
+        with self.conn:
+            self.conn.execute("UPDATE playlist_scans SET scan_status='error'")
+        with patch("yt_library.playlist_dates.api_playlist_dates") as api, patch("yt_library.playlist_dates.web_playlist_dates") as web:
+            collect_playlist_dates(self.conn, {"youtube_data_api_enabled": True}, "PLtest", manual=True)
+            with self.conn:
+                self.conn.execute("UPDATE playlist_scans SET scan_status='ok'")
+                self.conn.execute("UPDATE playlist_items SET added_at='2025-01-01'")
+            collect_playlist_dates(self.conn, {"youtube_data_api_enabled": True}, "PLtest", manual=True)
+            api.assert_not_called()
+            web.assert_not_called()
+
     def test_api_failure_falls_back_and_cancellation_does_not_stamp_members(self):
         web = [{"video_id": "one", "added_at": "2025-01-01", "added_at_source": "music_web"}]
         with patch("yt_library.playlist_dates.api_playlist_dates", side_effect=ValueError("expired")), patch("yt_library.playlist_dates.web_playlist_dates", return_value=web):
             self.assertEqual(collect_playlist_dates(self.conn, {"youtube_data_api_enabled": True}, "PLtest"), 1)
         with self.conn:
-            self.conn.execute("UPDATE playlist_scans SET date_checked_at=NULL")
+            self.conn.execute("UPDATE playlist_scans SET date_checked_at=NULL, api_date_checked_at=NULL, music_date_checked_at=NULL")
         with patch("yt_library.playlist_dates.api_playlist_dates") as api, patch("yt_library.playlist_dates.web_playlist_dates") as web:
             self.assertEqual(collect_playlist_dates(self.conn, {"youtube_data_api_enabled": True}, "PLtest", should_stop=lambda: True), 0)
             api.assert_not_called()
@@ -156,7 +246,7 @@ class PlaylistDateCollectionTests(unittest.TestCase):
                     before_id = conn.execute("SELECT rowid FROM playlist_items").fetchone()[0]
                     for column in ("added_at_source", "first_seen_at", "set_video_id"):
                         conn.execute(f"ALTER TABLE playlist_items DROP COLUMN {column}")
-                    for column in ("date_checked_at", "membership_complete"):
+                    for column in ("date_checked_at", "membership_complete", "api_date_checked_at", "music_date_checked_at"):
                         conn.execute(f"ALTER TABLE playlist_scans DROP COLUMN {column}")
                     conn.execute("DELETE FROM schema_migrations")
                     conn.execute("INSERT INTO schema_migrations(version, applied_at) VALUES (?, '2020-01-01')", (version,))
@@ -167,5 +257,36 @@ class PlaylistDateCollectionTests(unittest.TestCase):
                     row = conn.execute("SELECT rowid, added_at, first_seen_at, added_at_source FROM playlist_items").fetchone()
                     self.assertEqual(tuple(row), (before_id, "2020-01-01T01:02:03Z", None, "unknown"))
                     self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+                    self.assertEqual(tuple(conn.execute("SELECT api_date_checked_at, music_date_checked_at FROM playlist_scans").fetchone()), (None, None))
                 finally:
                     conn.close()
+
+    def test_v37_migration_retains_legacy_check_without_guessing_source(self):
+        path = Path(self.temp.name) / "v37.sqlite3"
+        conn = migrated_connection(path)
+        with conn:
+            core.save_playlist_scan(conn, "PLold", [{"video_id": "old"}], "ok", "")
+            conn.execute("UPDATE playlist_items SET added_at='2020-01-01', added_at_source='youtube_api', set_video_id='occurrence', first_seen_at='2020-01-02T00:00:00Z'")
+            conn.execute("UPDATE playlist_scans SET date_checked_at='2025-01-01T00:00:00Z'")
+            before = tuple(conn.execute("SELECT rowid,* FROM playlist_items").fetchone())
+            conn.execute("ALTER TABLE playlist_scans DROP COLUMN api_date_checked_at")
+            conn.execute("ALTER TABLE playlist_scans DROP COLUMN music_date_checked_at")
+            conn.execute("DELETE FROM schema_migrations WHERE version>=38")
+            conn.execute("INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES (37,'2025-01-01')")
+        conn.close()
+        core.migrate_database(path)
+        conn = core.connect(path)
+        try:
+            self.assertEqual(tuple(conn.execute("SELECT rowid,* FROM playlist_items").fetchone()), before)
+            self.assertEqual(tuple(conn.execute("SELECT date_checked_at,api_date_checked_at,music_date_checked_at FROM playlist_scans").fetchone()), ("2025-01-01T00:00:00Z", None, None))
+            self.assertEqual(conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 38)
+            with conn:
+                conn.execute("UPDATE playlist_scans SET api_date_checked_at='2025-02-01T00:00:00Z'")
+        finally:
+            conn.close()
+        core.migrate_database(path)
+        conn = core.connect(path)
+        try:
+            self.assertEqual(conn.execute("SELECT api_date_checked_at FROM playlist_scans").fetchone()[0], "2025-02-01T00:00:00Z")
+        finally:
+            conn.close()
