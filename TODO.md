@@ -258,7 +258,7 @@ The left-navigation library lists are named omni-search presets. Search returns 
 - Persist scheduled Update last-run and failure status across service restarts; the daily schedule and next-run status are available now.
 - Make parent-child relationships in hierarchical filters more visually obvious, including enabled, disabled, selected, and partially selected states.
 - Automate GitHub publication for YTL's versioned releases. The application now
-  has a canonical 1.0.0 version and `CHANGELOG.md`; future releases should update
+  has a canonical application version and `CHANGELOG.md`; future releases should update
   the version and user-facing change/compatibility notes together.
 - Automate plugin release builds/publication in CI and define catalog review and
   release-retention policy. Five initial verified wheel/sdist releases are now
@@ -269,7 +269,7 @@ The left-navigation library lists are named omni-search presets. Search returns 
   and plugin-owned database backup/rollback policies (package rollback alone
   cannot undo migrations). See `design.md` for the implemented lifecycle.
 - Keep `CHANGELOG.md` current for each release, covering user-facing changes,
-  fixes, schema impact, and operational notes (initial 1.0.0 baseline recorded).
+  fixes, schema impact, and operational notes (1.0.0 and 1.1.0 recorded).
 - Package YT Library as a supported Docker image and add a documented Docker
   Compose and CI workflow covering first-run initialization, schema upgrades,
   persistent config/database/cookie/thumbnail mounts, health checks, and

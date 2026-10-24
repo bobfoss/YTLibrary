@@ -4,9 +4,9 @@ Last consolidated: 2026-08-26. This handoff summarizes the current checkout.
 Recheck the live service, queue, schema, and test count before relying on
 snapshot values.
 
-Application version: **1.0.0**, defined in `yt_library/__init__.py` and exposed
+Application version: **1.1.0**, defined in `yt_library/__init__.py` and exposed
 by `--version`, the browser/Admin headers, and `service.version` in status APIs.
-`CHANGELOG.md` records the first versioned baseline. Starting with 1.0, preserve
+`CHANGELOG.md` records releases since the 1.0 baseline. Starting with 1.0, preserve
 existing browser URLs or provide redirects when changing them; obsolete pre-1.0
 routes are not restored retroactively. App, schema, and plugin API versions are
 independent.

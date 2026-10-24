@@ -56,10 +56,10 @@ Primary surfaces:
 - `/videos/{id}`, `/clips/{id}`, `/playlists/{id}`, and `/channels/{id}` are detail views. Playlist details reuse the video facet model for their member list, while channel details retain their playlist and History tabs.
 - `/admin`: status dashboard and worker control plane for metadata, playlist scans, placeholder recovery, and history.
 
-YT Library is version 1.0.0; `yt_library.__version__` owns the application
+YT Library is version 1.1.0; `yt_library.__version__` owns the application
 version independently of schema and plugin API versions. The CLI, browser/Admin
 headers, and status API expose that same value. `CHANGELOG.md` records releases.
-Starting with this 1.0 baseline, route or parameter changes must preserve public
+Starting with the 1.0 baseline, route or parameter changes must preserve public
 browser links or provide redirects. Previously retired pre-1.0 hash routes and
 obsolete named-view URLs do not gain compatibility aliases retroactively.
 

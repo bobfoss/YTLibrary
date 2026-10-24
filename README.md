@@ -1,6 +1,6 @@
 # YT Library Manager
 
-Current version: **1.0.0**. See [CHANGELOG.md](CHANGELOG.md) for release notes.
+Current version: **1.1.0**. See [CHANGELOG.md](CHANGELOG.md) for release notes.
 Run `.\.venv\Scripts\python.exe yt_library_manager.py --version` to identify
 your checkout; the browser header and service status API report the same version.
 Starting with 1.0, changes to browser URLs preserve existing links or provide
